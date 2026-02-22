@@ -64,6 +64,8 @@ app.get('/api/sessions', (_req, res) => {
         createdAt: s.createdAt,
         subject: p?.subject as string | undefined,
         to: p?.to as string | undefined,
+        risk: p?.risk as string | undefined,
+        command: p?.command as string | undefined,
       }
     })
   res.json(list)

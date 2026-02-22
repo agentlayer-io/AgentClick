@@ -8,6 +8,8 @@ interface SessionItem {
   createdAt: number
   subject?: string
   to?: string
+  risk?: string
+  command?: string
 }
 
 function sessionPath(s: SessionItem): string {
@@ -26,6 +28,30 @@ function formatTime(ts: number): string {
   const diffHr = Math.floor(diffMin / 60)
   if (diffHr < 24) return `${diffHr}h ago`
   return d.toLocaleDateString()
+}
+
+const DANGEROUS_COMMANDS = ['rm', 'drop', 'delete', 'format', 'truncate', 'fdisk', 'mkfs']
+
+function sessionRisk(s: SessionItem): 'danger' | 'warning' | 'normal' {
+  if (s.type === 'code_review' && s.command) {
+    const cmd = s.command.toLowerCase()
+    if (DANGEROUS_COMMANDS.some(d => cmd.includes(d))) return 'danger'
+  }
+  if (s.type === 'action_approval') {
+    if (s.risk === 'high') return 'danger'
+    if (s.risk === 'medium') return 'warning'
+  }
+  return 'normal'
+}
+
+function riskBadge(risk: 'danger' | 'warning' | 'normal') {
+  if (risk === 'danger') return (
+    <span className="text-xs px-2 py-0.5 rounded font-medium bg-red-50 text-red-500">Dangerous</span>
+  )
+  if (risk === 'warning') return (
+    <span className="text-xs px-2 py-0.5 rounded font-medium bg-amber-50 text-amber-600">Medium Risk</span>
+  )
+  return null
 }
 
 export default function HomePage() {
@@ -61,32 +87,36 @@ export default function HomePage() {
 
         {!loading && sessions.length > 0 && (
           <div className="space-y-2">
-            {sessions.map(s => (
-              <Link
-                key={s.id}
-                to={sessionPath(s)}
-                className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-lg hover:border-gray-200 transition-colors"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-zinc-800 truncate">
-                    {s.subject ?? s.type}
-                  </p>
-                  {s.to && (
-                    <p className="text-xs text-zinc-400 mt-0.5 truncate">To: {s.to}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 shrink-0 ml-4">
-                  <span className={`text-xs px-2 py-0.5 rounded font-medium ${
-                    s.status === 'completed'
-                      ? 'bg-green-50 text-green-600'
-                      : 'bg-amber-50 text-amber-600'
-                  }`}>
-                    {s.status}
-                  </span>
-                  <span className="text-xs text-zinc-400">{formatTime(s.createdAt)}</span>
-                </div>
-              </Link>
-            ))}
+            {sessions.map(s => {
+              const risk = sessionRisk(s)
+              const borderClass = risk === 'danger' ? 'border-l-4 border-l-red-400' :
+                                  risk === 'warning' ? 'border-l-4 border-l-amber-400' : ''
+              return (
+                <Link
+                  key={s.id}
+                  to={sessionPath(s)}
+                  className={`flex items-center justify-between p-4 bg-white border border-gray-100 rounded-lg hover:border-gray-200 transition-colors ${borderClass}`}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-zinc-800 truncate">
+                      {s.subject ?? s.type}
+                    </p>
+                    {s.to && (
+                      <p className="text-xs text-zinc-400 mt-0.5 truncate">To: {s.to}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0 ml-4">
+                    {riskBadge(risk)}
+                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                      s.status === 'completed' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'
+                    }`}>
+                      {s.status}
+                    </span>
+                    <span className="text-xs text-zinc-400">{formatTime(s.createdAt)}</span>
+                  </div>
+                </Link>
+              )
+            })}
           </div>
         )}
 
