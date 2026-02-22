@@ -1,0 +1,15 @@
+{
+  "name": "openclaw-ui",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w packages/server\" \"npm run dev -w packages/web\"",
+    "build": "npm run build -w packages/server && npm run build -w packages/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
