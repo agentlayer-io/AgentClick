@@ -45,6 +45,25 @@ app.post('/api/review', async (req, res) => {
   res.json({ sessionId: id, url })
 })
 
+// List recent sessions for homepage
+app.get('/api/sessions', (_req, res) => {
+  const list = Object.values(sessions)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 20)
+    .map(s => {
+      const p = s.payload as Record<string, unknown> | undefined
+      return {
+        id: s.id,
+        type: s.type,
+        status: s.status,
+        createdAt: s.createdAt,
+        subject: p?.subject as string | undefined,
+        to: p?.to as string | undefined,
+      }
+    })
+  res.json(list)
+})
+
 // Web UI fetches session data
 app.get('/api/sessions/:id', (req, res) => {
   const session = sessions[req.params.id]

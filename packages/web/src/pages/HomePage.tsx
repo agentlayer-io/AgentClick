@@ -1,0 +1,90 @@
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+
+interface SessionItem {
+  id: string
+  type: string
+  status: 'pending' | 'completed'
+  createdAt: number
+  subject?: string
+  to?: string
+}
+
+function formatTime(ts: number): string {
+  const d = new Date(ts)
+  const now = Date.now()
+  const diffMs = now - ts
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1) return 'just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 24) return `${diffHr}h ago`
+  return d.toLocaleDateString()
+}
+
+export default function HomePage() {
+  const [sessions, setSessions] = useState<SessionItem[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('http://localhost:3001/api/sessions')
+      .then(r => r.json())
+      .then(data => {
+        setSessions(data)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-2xl mx-auto py-10 px-4">
+
+        <div className="mb-6">
+          <p className="text-xs text-zinc-400 uppercase tracking-wider mb-1">openclaw-ui</p>
+          <h1 className="text-xl font-semibold text-zinc-900">Recent Sessions</h1>
+        </div>
+
+        {loading && (
+          <p className="text-sm text-zinc-400">Loading...</p>
+        )}
+
+        {!loading && sessions.length === 0 && (
+          <p className="text-sm text-zinc-400">No sessions yet.</p>
+        )}
+
+        {!loading && sessions.length > 0 && (
+          <div className="space-y-2">
+            {sessions.map(s => (
+              <Link
+                key={s.id}
+                to={`/review/${s.id}`}
+                className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-lg hover:border-gray-200 transition-colors"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-zinc-800 truncate">
+                    {s.subject ?? s.type}
+                  </p>
+                  {s.to && (
+                    <p className="text-xs text-zinc-400 mt-0.5 truncate">To: {s.to}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 shrink-0 ml-4">
+                  <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                    s.status === 'completed'
+                      ? 'bg-green-50 text-green-600'
+                      : 'bg-amber-50 text-amber-600'
+                  }`}>
+                    {s.status}
+                  </span>
+                  <span className="text-xs text-zinc-400">{formatTime(s.createdAt)}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+
+      </div>
+    </div>
+  )
+}
