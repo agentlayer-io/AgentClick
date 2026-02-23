@@ -21,6 +21,11 @@ interface EmailItem {
   timestamp: number
 }
 
+interface CcSuggestion {
+  name: string
+  email: string
+}
+
 interface InboxPayload {
   inbox: EmailItem[]
   draft: {
@@ -28,6 +33,7 @@ interface InboxPayload {
     to: string
     subject: string
     paragraphs: Paragraph[]
+    ccSuggestions?: CcSuggestion[]
   }
 }
 
@@ -88,7 +94,7 @@ export default function ReviewPage() {
   const [rightView, setRightView] = useState<'draft' | 'summary' | 'empty'>('empty')
   const [markedAsRead, setMarkedAsRead] = useState<string[]>([])
   const [userIntention, setUserIntention] = useState('')
-  const [cc, setCc] = useState('')
+  const [selectedCcEmails, setSelectedCcEmails] = useState<string[]>([])
   const [summaryEmail, setSummaryEmail] = useState<EmailItem | null>(null)
 
   useEffect(() => {
@@ -155,8 +161,17 @@ export default function ReviewPage() {
   const submit = async (confirmed: boolean) => {
     setSubmitting(true)
     const hasInbox = payload && 'inbox' in payload && Array.isArray((payload as InboxPayload).inbox)
+    const ccSuggestions = hasInbox ? ((payload as InboxPayload).draft.ccSuggestions ?? []) : []
+    const selectedCcSuggestions = ccSuggestions.filter(s => selectedCcEmails.includes(s.email))
     const body = hasInbox
-      ? JSON.stringify({ actions, confirmed, regenerate: !confirmed, markedAsRead, userIntention, cc })
+      ? JSON.stringify({
+          actions,
+          confirmed,
+          regenerate: !confirmed,
+          markedAsRead,
+          userIntention,
+          selectedCcSuggestions,
+        })
       : JSON.stringify({ actions, confirmed, regenerate: !confirmed })
     const result = await fetch(`http://localhost:3001/api/sessions/${id}/complete`, {
       method: 'POST',
@@ -204,6 +219,15 @@ export default function ReviewPage() {
     const inboxPayload = payload as InboxPayload
     const visibleEmails = inboxPayload.inbox.filter(e => !markedAsRead.includes(e.id)).slice(0, 10)
     const hasActions = actions.length > 0
+    const ccSuggestions = inboxPayload.draft.ccSuggestions ?? []
+
+    const toggleCcSuggestion = (email: string) => {
+      setSelectedCcEmails(current =>
+        current.includes(email)
+          ? current.filter(x => x !== email)
+          : [...current, email]
+      )
+    }
 
     const renderParagraphs = (paragraphs: Paragraph[]) =>
       paragraphs.map(p => {
@@ -383,16 +407,37 @@ export default function ReviewPage() {
                   />
                 </div>
 
-                {/* CC */}
+                {/* CC Suggestions */}
                 <div className="mb-6">
-                  <label className="block text-xs text-zinc-500 mb-1">CC</label>
-                  <input
-                    type="text"
-                    className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    placeholder="e.g. hanwen@company.com"
-                    value={cc}
-                    onChange={e => setCc(e.target.value)}
-                  />
+                  <label className="block text-xs text-zinc-500 mb-2">CC Suggestions</label>
+                  {ccSuggestions.length === 0 ? (
+                    <p className="text-xs text-zinc-400 border border-gray-100 rounded-lg px-3 py-2">No CC suggestions</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {ccSuggestions.map(suggestion => {
+                        const checked = selectedCcEmails.includes(suggestion.email)
+                        return (
+                          <label
+                            key={suggestion.email}
+                            className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                              checked ? 'border-blue-200 bg-blue-50' : 'border-gray-100 hover:border-gray-200 bg-white'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleCcSuggestion(suggestion.email)}
+                              className="h-4 w-4 rounded border-gray-300 text-blue-500 focus:ring-blue-300"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-sm text-zinc-700 truncate">{suggestion.name}</p>
+                              <p className="text-xs text-zinc-400 truncate">{suggestion.email}</p>
+                            </div>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 {/* Footer buttons */}

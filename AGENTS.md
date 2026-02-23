@@ -132,10 +132,10 @@ Read `docs/dev-rules.md` before writing any code. Key rules:
 - Minimal CI build workflow (GitHub Actions: `npm ci && npm run build`)
 - Deployment guide (`docs/deployment.md`) for single-port runtime, env vars, reverse proxy, and Docker/OpenClaw notes
 - Global CLI packaging entrypoint (`bin/agentclick.mjs`) for `agentclick` command startup
+- npm package published: `agentclick@0.1.0`
+- CC suggestions checkbox UI (returns selected suggestions in review completion payload)
 
 **Pending:**
-- npm publish execution (`npm publish`) after final package review
-- CC suggestions as checkboxes (currently free-text input; agent can pass `ccSuggestions[]`)
 
 ---
 
