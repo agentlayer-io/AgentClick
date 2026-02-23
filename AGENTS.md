@@ -16,6 +16,8 @@ npm run dev
 # UI:     http://localhost:5173
 ```
 
+The server auto-loads root `.env` via `dotenv` for `PORT` and `OPENCLAW_WEBHOOK` overrides.
+
 To test without a live agent, POST a mock session:
 
 ```bash

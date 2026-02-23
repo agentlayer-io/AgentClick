@@ -69,6 +69,8 @@ PORT=3001
 OPENCLAW_WEBHOOK=http://localhost:18789/hooks/agent
 ```
 
+Create a local `.env` in the project root to override these values during development (server auto-loads it via `dotenv`).
+
 Copy the skill to your OpenClaw workspace:
 
 ```bash
