@@ -134,8 +134,10 @@ Read `docs/dev-rules.md` before writing any code. Key rules:
 - Global CLI packaging entrypoint (`bin/agentclick.mjs`) for `agentclick` command startup
 - npm package published: `agentclick@0.1.0`
 - CC suggestions checkbox UI (returns selected suggestions in review completion payload)
+- Summary view fetches `/api/sessions/:id/summary` and renders mock summary response (backend endpoint included)
 
 **Pending:**
+- Replace mock summary endpoint with real agent-generated summaries
 
 ---
 

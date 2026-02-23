@@ -83,6 +83,40 @@ app.get('/api/sessions/:id', (req, res) => {
   res.json(session)
 })
 
+// Mock summary endpoint for inbox items (UI integration first)
+app.get('/api/sessions/:id/summary', (req, res) => {
+  const session = getSession(req.params.id)
+  if (!session) return res.status(404).json({ error: 'Session not found' })
+
+  const payload = session.payload as Record<string, unknown> | undefined
+  const inbox = (payload?.inbox as Array<Record<string, unknown>> | undefined) ?? []
+  const emailId = req.query.emailId as string | undefined
+  const email = inbox.find(item => item.id === emailId)
+
+  if (!email) {
+    return res.status(404).json({ error: 'Email not found in session' })
+  }
+
+  const preview = String(email.preview ?? '')
+  const summaryText = preview.length > 0
+    ? `This email appears to be about: ${preview}`
+    : 'No preview text is available for this email yet.'
+
+  const from = String(email.from ?? 'Unknown sender')
+  const category = String(email.category ?? 'Unknown')
+
+  res.json({
+    emailId,
+    summary: summaryText,
+    bullets: [
+      `From: ${from}`,
+      `Category: ${category}`,
+      'Source: mock summary endpoint (replace with agent summary later)',
+    ],
+    confidence: 'mock',
+  })
+})
+
 // Long-poll: agent calls this and blocks until user completes review (up to 5 min)
 app.get('/api/sessions/:id/wait', async (req, res) => {
   const TIMEOUT_MS = 5 * 60 * 1000

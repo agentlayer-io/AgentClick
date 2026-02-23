@@ -44,6 +44,14 @@ interface Action {
   instruction?: string
 }
 
+interface SummaryResponse {
+  emailId?: string
+  summary: string
+  bullets?: string[]
+  confidence?: string
+  error?: string
+}
+
 type ParagraphState = 'normal' | 'deleted' | 'rewriting'
 
 // Keys must match REASON_LABELS in preference.ts
@@ -96,6 +104,9 @@ export default function ReviewPage() {
   const [userIntention, setUserIntention] = useState('')
   const [selectedCcEmails, setSelectedCcEmails] = useState<string[]>([])
   const [summaryEmail, setSummaryEmail] = useState<EmailItem | null>(null)
+  const [summaryData, setSummaryData] = useState<SummaryResponse | null>(null)
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [summaryError, setSummaryError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch(`http://localhost:3001/api/sessions/${id}`)
@@ -153,9 +164,25 @@ export default function ReviewPage() {
     }
   }
 
-  const handleSummary = (email: EmailItem) => {
+  const handleSummary = async (email: EmailItem) => {
     setSummaryEmail(email)
+    setSummaryLoading(true)
+    setSummaryError(null)
+    setSummaryData(null)
     setRightView('summary')
+    try {
+      const result = await fetch(`http://localhost:3001/api/sessions/${id}/summary?emailId=${encodeURIComponent(email.id)}`)
+        .then(r => r.json() as Promise<SummaryResponse>)
+      if (result.error) {
+        setSummaryError(result.error)
+        return
+      }
+      setSummaryData(result)
+    } catch {
+      setSummaryError('Summary service unavailable')
+    } finally {
+      setSummaryLoading(false)
+    }
   }
 
   const submit = async (confirmed: boolean) => {
@@ -367,8 +394,33 @@ export default function ReviewPage() {
                 <div className="border-t border-gray-100 pt-6">
                   <h2 className="text-base font-medium text-zinc-800 mb-1">{summaryEmail.subject}</h2>
                   <p className="text-xs text-zinc-500 mb-4">From: {summaryEmail.from}</p>
-                  <p className="text-sm text-zinc-700 leading-relaxed">{summaryEmail.preview}</p>
-                  <p className="text-xs text-zinc-300 mt-4">Summary via agent</p>
+                  {summaryLoading && (
+                    <p className="text-sm text-zinc-400">Loading summary...</p>
+                  )}
+                  {!summaryLoading && summaryError && (
+                    <div className="space-y-2">
+                      <p className="text-sm text-red-400">{summaryError}</p>
+                      <p className="text-xs text-zinc-400">Fallback preview: {summaryEmail.preview}</p>
+                    </div>
+                  )}
+                  {!summaryLoading && !summaryError && summaryData && (
+                    <div>
+                      <p className="text-sm text-zinc-700 leading-relaxed">{summaryData.summary}</p>
+                      {summaryData.bullets && summaryData.bullets.length > 0 && (
+                        <ul className="mt-3 space-y-1">
+                          {summaryData.bullets.map((bullet, index) => (
+                            <li key={`${bullet}-${index}`} className="text-xs text-zinc-500">
+                              - {bullet}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="text-xs text-zinc-300 mt-4">
+                        Summary via agent
+                        {summaryData.confidence ? ` (${summaryData.confidence})` : ''}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
