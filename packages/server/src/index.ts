@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import open from 'open'
 import { learnFromDeletions } from './preference'
+import { createSession, getSession, listSessions, completeSession } from './store'
 
 const app = express()
 const PORT = 3001
@@ -10,30 +11,23 @@ const OPENCLAW_WEBHOOK = 'http://localhost:18789/hooks/agent'
 app.use(cors())
 app.use(express.json())
 
-// In-memory session store (good enough for local MVP)
-const sessions: Record<string, {
-  id: string
-  type: string
-  payload: unknown
-  status: 'pending' | 'completed'
-  result?: unknown
-  sessionKey?: string
-  createdAt: number
-}> = {}
-
 // OpenClaw calls this when a review is needed
 app.post('/api/review', async (req, res) => {
   const { type, sessionKey, payload } = req.body
 
+  if (!sessionKey) {
+    console.warn('[openclaw-ui] Warning: sessionKey missing — callback will be skipped')
+  }
+
   const id = `session_${Date.now()}`
-  sessions[id] = {
+  createSession({
     id,
     type: type || 'email_review',
     payload,
     sessionKey,
     status: 'pending',
-    createdAt: Date.now()
-  }
+    createdAt: Date.now(),
+  })
 
   const routeMap: Record<string, string> = {
     action_approval: 'approval',
@@ -44,47 +38,48 @@ app.post('/api/review', async (req, res) => {
   console.log(`[openclaw-ui] Review session created: ${id}`)
   console.log(`[openclaw-ui] Opening browser: ${url}`)
 
-  // Open browser automatically in local mode
-  await open(url)
+  try {
+    await open(url)
+  } catch (err) {
+    console.warn('[openclaw-ui] Failed to open browser:', err)
+  }
 
   res.json({ sessionId: id, url })
 })
 
 // List recent sessions for homepage
 app.get('/api/sessions', (_req, res) => {
-  const list = Object.values(sessions)
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .slice(0, 20)
-    .map(s => {
-      const p = s.payload as Record<string, unknown> | undefined
-      return {
-        id: s.id,
-        type: s.type,
-        status: s.status,
-        createdAt: s.createdAt,
-        subject: p?.subject as string | undefined,
-        to: p?.to as string | undefined,
-        risk: p?.risk as string | undefined,
-        command: p?.command as string | undefined,
-      }
-    })
+  const list = listSessions(20).map(s => {
+    const p = s.payload as Record<string, unknown> | undefined
+    // Format B (inbox+draft) stores subject/to inside draft
+    const draft = p?.draft as Record<string, unknown> | undefined
+    return {
+      id: s.id,
+      type: s.type,
+      status: s.status,
+      createdAt: s.createdAt,
+      subject: (draft?.subject ?? p?.subject) as string | undefined,
+      to: (draft?.to ?? p?.to) as string | undefined,
+      risk: p?.risk as string | undefined,
+      command: p?.command as string | undefined,
+    }
+  })
   res.json(list)
 })
 
 // Web UI fetches session data
 app.get('/api/sessions/:id', (req, res) => {
-  const session = sessions[req.params.id]
+  const session = getSession(req.params.id)
   if (!session) return res.status(404).json({ error: 'Session not found' })
   res.json(session)
 })
 
 // Web UI submits user actions
 app.post('/api/sessions/:id/complete', async (req, res) => {
-  const session = sessions[req.params.id]
+  const session = getSession(req.params.id)
   if (!session) return res.status(404).json({ error: 'Session not found' })
 
-  session.status = 'completed'
-  session.result = req.body
+  completeSession(req.params.id, req.body)
 
   console.log(`[openclaw-ui] Session ${session.id} completed:`, JSON.stringify(req.body, null, 2))
 

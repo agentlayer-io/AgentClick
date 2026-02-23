@@ -101,6 +101,18 @@ export default function ReviewPage() {
       .catch(() => { setError(true); setLoading(false) })
   }, [id])
 
+  // Cmd+Enter to confirm & send
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !submitting && !submitted) {
+        e.preventDefault()
+        submit(true)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [submitting, submitted])
+
   const deleteParagraph = (pid: string, reasonKey: string) => {
     setStates(s => ({ ...s, [pid]: 'deleted' }))
     setActions(a => [...a.filter(x => x.paragraphId !== pid), { type: 'delete', paragraphId: pid, reason: reasonKey }])
@@ -517,13 +529,21 @@ function DeleteButton({ onConfirm }: { onConfirm: (reasonKey: string) => void })
 
   useEffect(() => {
     if (!open) return
-    const handler = (e: MouseEvent) => {
+    const handler = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent) {
+        if (e.key === 'Escape') setOpen(false)
+        return
+      }
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false)
       }
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('mousedown', handler as EventListener)
+    document.addEventListener('keydown', handler as EventListener)
+    return () => {
+      document.removeEventListener('mousedown', handler as EventListener)
+      document.removeEventListener('keydown', handler as EventListener)
+    }
   }, [open])
 
   if (!open) return (
