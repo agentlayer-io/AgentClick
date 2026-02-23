@@ -118,6 +118,8 @@ Read `docs/dev-rules.md` before writing any code. Key rules:
 - Long-poll `/wait` endpoint for agent integration
 - Keyboard shortcuts: `Escape` closes dropdown, `Cmd+Enter` submits
 - End-to-end tested with OpenClaw (Docker) via Feishu — full loop verified
+- Production single-port serving (`npm run build && npm start`)
+- Minimal CI build workflow (GitHub Actions: `npm ci && npm run build`)
 
 **Pending:**
 - npm global package (`openclaw-ui` on npm)
