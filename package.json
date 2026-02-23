@@ -2,6 +2,19 @@
   "name": "agentclick",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "agentclick": "./bin/agentclick.mjs"
+  },
+  "files": [
+    "bin/",
+    "packages/server/dist/",
+    "packages/server/src/",
+    "packages/server/package.json",
+    "packages/web/dist/",
+    "packages/web/package.json",
+    "README.md",
+    "AGENTS.md"
+  ],
   "workspaces": [
     "packages/*"
   ],

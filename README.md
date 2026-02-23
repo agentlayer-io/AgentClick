@@ -60,6 +60,15 @@ npm install
 npm run dev        # dev mode: API on 3001, Vite UI on 5173
 ```
 
+## Install (Global CLI)
+
+```bash
+npm install -g agentclick
+agentclick
+```
+
+This starts the AgentClick server on `http://localhost:3001` and serves the built web UI on the same port.
+
 Optional server config (defaults shown in `.env.example`):
 
 ```bash

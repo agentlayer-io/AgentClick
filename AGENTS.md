@@ -26,6 +26,13 @@ npm start
 # API + UI: http://localhost:3001
 ```
 
+Global CLI install target (packaging in progress):
+
+```bash
+npm install -g agentclick
+agentclick
+```
+
 Deployment / production notes:
 - `docs/deployment.md` (single-port serving, `.env`, Nginx reverse proxy example, Docker/OpenClaw host mapping)
 
@@ -124,9 +131,10 @@ Read `docs/dev-rules.md` before writing any code. Key rules:
 - Production single-port serving (`npm run build && npm start`)
 - Minimal CI build workflow (GitHub Actions: `npm ci && npm run build`)
 - Deployment guide (`docs/deployment.md`) for single-port runtime, env vars, reverse proxy, and Docker/OpenClaw notes
+- Global CLI packaging entrypoint (`bin/agentclick.mjs`) for `agentclick` command startup
 
 **Pending:**
-- npm global package (`agentclick` on npm)
+- npm publish execution (`npm publish`) after final package review
 - CC suggestions as checkboxes (currently free-text input; agent can pass `ccSuggestions[]`)
 
 ---
