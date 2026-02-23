@@ -74,6 +74,22 @@ app.get('/api/sessions/:id', (req, res) => {
   res.json(session)
 })
 
+// Long-poll: agent calls this and blocks until user completes review (up to 5 min)
+app.get('/api/sessions/:id/wait', async (req, res) => {
+  const TIMEOUT_MS = 5 * 60 * 1000
+  const POLL_MS = 1500
+  const start = Date.now()
+
+  while (Date.now() - start < TIMEOUT_MS) {
+    const session = getSession(req.params.id)
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+    if (session.status === 'completed') return res.json(session)
+    await new Promise(r => setTimeout(r, POLL_MS))
+  }
+
+  res.status(408).json({ error: 'timeout', message: 'User did not complete review within 5 minutes' })
+})
+
 // Web UI submits user actions
 app.post('/api/sessions/:id/complete', async (req, res) => {
   const session = getSession(req.params.id)

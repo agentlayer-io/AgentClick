@@ -5,34 +5,40 @@ description: Use this skill when you are about to take a consequential or irreve
 
 # ClawUI Action Approval
 
-When you are about to take an action that could have significant consequences (sending messages, deleting data, making purchases, calling external APIs), follow these steps:
+When you are about to take a high-risk action (sending messages, deleting data, calling external APIs), use these steps.
 
 ## Step 1: Submit for approval
 
 ```bash
-curl -s -X POST http://localhost:3001/api/review \
+RESPONSE=$(curl -s -X POST http://host.docker.internal:3001/api/review \
   -H "Content-Type: application/json" \
   -d '{
     "type": "action_approval",
-    "sessionKey": "{{SESSION_KEY}}",
     "payload": {
-      "action": "{{ONE_LINE_DESCRIPTION_OF_ACTION}}",
-      "detail": "{{FULL_DETAIL_OF_WHAT_YOU_WILL_DO}}",
-      "risk": "{{low|medium|high}}"
+      "action": "ONE_LINE_DESCRIPTION",
+      "detail": "FULL_DETAIL_OF_WHAT_YOU_WILL_DO",
+      "risk": "low|medium|high"
     }
-  }'
+  }')
+echo "$RESPONSE"
 ```
+
+Save the `sessionId` from the response.
 
 ## Step 2: Notify the user
 
-> "I need your approval before proceeding. A browser window has opened — please review and decide."
+> "I need your approval before proceeding. Please open http://localhost:5173 in your browser to review."
 
-## Step 3: Wait for confirmation
+## Step 3: Wait for decision (blocks up to 5 minutes)
 
-Do NOT proceed until you receive a system message starting with `[openclaw-ui]`.
+```bash
+SESSION_ID="<sessionId from Step 1>"
+curl -s "http://host.docker.internal:3001/api/sessions/${SESSION_ID}/wait"
+```
 
 ## Step 4: Act on the decision
 
-- If approved: proceed with the action.
-- If rejected: stop and inform the user.
-- If approved with note: incorporate the user's note before proceeding.
+Read `result.approved` from the response:
+
+- `true` → proceed with the action. If `result.note` is set, incorporate it.
+- `false` → stop. Inform the user the action was rejected.
