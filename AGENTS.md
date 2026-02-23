@@ -115,3 +115,10 @@ Read `docs/dev-rules.md` before writing any code. Key rules:
 - Express unified serving (eliminate 3001/5173 dual port — needed before npm publish)
 - npm global package (`openclaw-ui` on npm)
 - CC suggestions as checkboxes (currently free-text input; agent can pass `ccSuggestions[]`)
+
+---
+
+## Recent Verification
+
+- 2026-02-23 (local): Verified API session creation for `email_review`, `action_approval`, and `code_review` via `scripts/demo.sh`.
+- 2026-02-23 (local): Verified `create -> GET session (pending) -> complete -> /wait (completed)` flow on `action_approval`.
