@@ -18,27 +18,41 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'pending',
     result TEXT,
     sessionKey TEXT,
-    createdAt INTEGER NOT NULL
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    revision INTEGER NOT NULL DEFAULT 0
   )
 `)
+
+// Migrate existing tables: add updatedAt and revision if missing
+try {
+  db.exec(`ALTER TABLE sessions ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0`)
+} catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE sessions ADD COLUMN revision INTEGER NOT NULL DEFAULT 0`)
+} catch { /* column already exists */ }
 
 export interface Session {
   id: string
   type: string
   payload: unknown
-  status: 'pending' | 'completed'
+  status: 'pending' | 'rewriting' | 'completed'
   result?: unknown
   sessionKey?: string
   createdAt: number
+  updatedAt: number
+  revision: number
 }
 
 export function createSession(session: Session): void {
   db.prepare(`
-    INSERT INTO sessions (id, type, payload, status, sessionKey, createdAt)
-    VALUES (@id, @type, @payload, @status, @sessionKey, @createdAt)
+    INSERT INTO sessions (id, type, payload, status, sessionKey, createdAt, updatedAt, revision)
+    VALUES (@id, @type, @payload, @status, @sessionKey, @createdAt, @updatedAt, @revision)
   `).run({
     ...session,
     payload: JSON.stringify(session.payload),
+    updatedAt: session.updatedAt || Date.now(),
+    revision: session.revision || 0,
   })
 }
 
@@ -55,8 +69,20 @@ export function listSessions(limit = 20): Session[] {
 
 export function completeSession(id: string, result: unknown): void {
   db.prepare(`
-    UPDATE sessions SET status = 'completed', result = ? WHERE id = ?
-  `).run(JSON.stringify(result), id)
+    UPDATE sessions SET status = 'completed', result = ?, updatedAt = ? WHERE id = ?
+  `).run(JSON.stringify(result), Date.now(), id)
+}
+
+export function setSessionRewriting(id: string, result: unknown): void {
+  db.prepare(`
+    UPDATE sessions SET status = 'rewriting', result = ?, updatedAt = ? WHERE id = ?
+  `).run(JSON.stringify(result), Date.now(), id)
+}
+
+export function updateSessionPayload(id: string, payload: unknown): void {
+  db.prepare(`
+    UPDATE sessions SET payload = ?, status = 'pending', result = NULL, updatedAt = ?, revision = revision + 1 WHERE id = ?
+  `).run(JSON.stringify(payload), Date.now(), id)
 }
 
 function deserialize(row: Record<string, unknown>): Session {
@@ -64,9 +90,11 @@ function deserialize(row: Record<string, unknown>): Session {
     id: row.id as string,
     type: row.type as string,
     payload: JSON.parse(row.payload as string),
-    status: row.status as 'pending' | 'completed',
+    status: row.status as 'pending' | 'rewriting' | 'completed',
     result: row.result ? JSON.parse(row.result as string) : undefined,
     sessionKey: row.sessionKey as string | undefined,
     createdAt: row.createdAt as number,
+    updatedAt: (row.updatedAt as number) || 0,
+    revision: (row.revision as number) || 0,
   }
 }
