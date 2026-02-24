@@ -52,25 +52,38 @@ Replace placeholders with actual content. Split body into 2–4 logical paragrap
 
 ```bash
 RESULT=$(curl -s "http://host.docker.internal:3001/api/sessions/${SESSION_ID}/wait")
+STATUS=$(echo "$RESULT" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+echo "STATUS=$STATUS"
 echo "$RESULT"
 ```
 
-The browser opens automatically. This call blocks until the user submits their decision.
+The browser opens automatically. This call blocks until the user submits.
 
-## Step 3: Check the status field in the response
+## Step 3: Act based on STATUS
 
-Parse the `status` field from the response.
-
-**If `status` is `"completed"`:** The user confirmed. Send the email now. Do NOT ask "are you sure?" — the user already confirmed in the UI. Apply any `result.actions` before sending. Then stop — you are done.
-
-**If `status` is `"rewriting"`:** The user wants you to rewrite the draft. Go to Step 4.
-
-## Step 4: Rewrite and update the SAME session (only if status was "rewriting")
-
-Read `result.actions` and `result.userIntention` from the response. Rewrite the draft paragraphs based on the user's feedback. Then send the rewritten draft back to the **same session** using this PUT request:
+Run this bash command to check the status:
 
 ```bash
-curl -s -X PUT "http://host.docker.internal:3001/api/sessions/${SESSION_ID}/payload" \
+echo "=== CHECKING STATUS: $STATUS ==="
+```
+
+There are exactly two cases:
+
+- **Case A: STATUS is `completed`** → The user confirmed. Send the email immediately. Do NOT ask the user again. You are done.
+- **Case B: STATUS is `rewriting`** → The user wants changes. You MUST execute Step 4 below. Do NOT skip it.
+
+## Step 4: Rewrite draft and PUT it back (REQUIRED when STATUS is "rewriting")
+
+You MUST execute this step when STATUS was "rewriting". This is not optional.
+
+First, read `result.actions` and `result.userIntention` from the Step 2 response. Rewrite the paragraphs accordingly.
+
+Then run this bash command to send the rewritten draft back:
+
+```bash
+echo "=== ENTERING STEP 4: REWRITING DRAFT ==="
+HTTP_CODE=$(curl -s -o /tmp/clawui_put_response.txt -w "%{http_code}" \
+  -X PUT "http://host.docker.internal:3001/api/sessions/${SESSION_ID}/payload" \
   -H "Content-Type: application/json" \
   -d '{
     "payload": {
@@ -85,9 +98,11 @@ curl -s -X PUT "http://host.docker.internal:3001/api/sessions/${SESSION_ID}/payl
         ]
       }
     }
-  }'
+  }')
+echo "=== PUT PAYLOAD DONE: HTTP $HTTP_CODE ==="
+cat /tmp/clawui_put_response.txt
 ```
 
 **IMPORTANT:** Do NOT create a new session. Reuse the same `SESSION_ID`.
 
-After the PUT succeeds, **go back to Step 2** and wait again. The user will see the updated draft in the same browser tab. Repeat Step 2 → 3 → 4 until the user confirms.
+After the PUT succeeds (HTTP 200), **go back to Step 2** and wait again. The user will see the updated draft in the same browser tab. Repeat Step 2 → 3 → 4 until the user finally confirms.
