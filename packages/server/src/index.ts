@@ -6,7 +6,7 @@ import { existsSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { learnFromDeletions } from './preference.js'
-import { createSession, getSession, listSessions, completeSession } from './store.js'
+import { createSession, getSession, listSessions, completeSession, setSessionRewriting, updateSessionPayload } from './store.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 3001)
@@ -28,14 +28,17 @@ app.post('/api/review', async (req, res) => {
     console.warn('[agentclick] Warning: sessionKey missing — callback will be skipped')
   }
 
-  const id = `session_${Date.now()}`
+  const now = Date.now()
+  const id = `session_${now}`
   createSession({
     id,
     type: type || 'email_review',
     payload,
     sessionKey,
     status: 'pending',
-    createdAt: Date.now(),
+    createdAt: now,
+    updatedAt: now,
+    revision: 0,
   })
 
   const routeMap: Record<string, string> = {
@@ -128,17 +131,36 @@ app.get('/api/sessions/:id/wait', async (req, res) => {
   while (Date.now() - start < TIMEOUT_MS) {
     const session = getSession(req.params.id)
     if (!session) return res.status(404).json({ error: 'Session not found' })
-    if (session.status === 'completed') return res.json(session)
+    if (session.status === 'completed' || session.status === 'rewriting') return res.json(session)
     await new Promise(r => setTimeout(r, POLL_MS))
   }
 
   res.status(408).json({ error: 'timeout', message: 'User did not complete review within 5 minutes' })
 })
 
+// Agent updates session payload after rewriting
+app.put('/api/sessions/:id/payload', (req, res) => {
+  const session = getSession(req.params.id)
+  if (!session) return res.status(404).json({ error: 'Session not found' })
+  if (session.status !== 'rewriting') return res.status(400).json({ error: 'Session is not in rewriting state' })
+
+  updateSessionPayload(req.params.id, req.body.payload)
+  console.log(`[agentclick] Session ${session.id} payload updated, back to pending`)
+  res.json({ ok: true })
+})
+
 // Web UI submits user actions
 app.post('/api/sessions/:id/complete', async (req, res) => {
   const session = getSession(req.params.id)
   if (!session) return res.status(404).json({ error: 'Session not found' })
+
+  // If user requested regeneration, set to rewriting (not completed) so agent can update
+  if (req.body.regenerate) {
+    setSessionRewriting(req.params.id, req.body)
+    console.log(`[agentclick] Session ${session.id} → rewriting:`, JSON.stringify(req.body, null, 2))
+    res.json({ ok: true, rewriting: true })
+    return
+  }
 
   completeSession(req.params.id, req.body)
 
