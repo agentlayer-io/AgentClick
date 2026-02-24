@@ -302,6 +302,7 @@ export default function ReviewPage() {
     const visibleEmails = inboxPayload.inbox.filter(e => !markedAsRead.includes(e.id)).slice(0, 10)
     const hasActions = actions.length > 0
     const intentSuggestions = inboxPayload.draft.intentSuggestions ?? []
+    const effectiveRightView = rightView === 'empty' && visibleEmails.length === 0 ? 'draft' : rightView
 
     const toggleIntent = (intentId: string, value: boolean) => {
       setSelectedIntents(current => {
@@ -429,14 +430,14 @@ export default function ReviewPage() {
           <div className="max-w-2xl mx-auto py-10 px-4">
 
             {/* View: empty */}
-            {rightView === 'empty' && (
+            {effectiveRightView === 'empty' && (
               <div className="flex items-center justify-center h-64">
                 <p className="text-sm text-zinc-400">Select an email to read.</p>
               </div>
             )}
 
             {/* View: summary */}
-            {rightView === 'summary' && summaryEmail && (
+            {effectiveRightView === 'summary' && summaryEmail && (
               <div>
                 <div className="flex items-center gap-2 mb-6">
                   <button
@@ -483,7 +484,7 @@ export default function ReviewPage() {
             )}
 
             {/* View: email */}
-            {rightView === 'email' && selectedEmailId && (() => {
+            {effectiveRightView === 'email' && selectedEmailId && (() => {
               const email = inboxPayload.inbox.find(e => e.id === selectedEmailId)
               if (!email) return null
               return (
@@ -522,7 +523,7 @@ export default function ReviewPage() {
             })()}
 
             {/* View: draft */}
-            {rightView === 'draft' && (
+            {effectiveRightView === 'draft' && (
               <div>
                 {/* Header */}
                 <div className="mb-6">
