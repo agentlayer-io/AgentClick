@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 
 interface Paragraph {
   id: string
@@ -93,6 +93,7 @@ function formatTimestamp(ts: number): string {
 
 export default function ReviewPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [payload, setPayload] = useState<EmailPayload | InboxPayload | null>(null)
   const [actions, setActions] = useState<Action[]>([])
   const [states, setStates] = useState<Record<string, ParagraphState>>({})
@@ -102,6 +103,8 @@ export default function ReviewPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [callbackFailed, setCallbackFailed] = useState(false)
+  const [waitingForRewrite, setWaitingForRewrite] = useState(false)
+  const revisionRef = useRef(0)
 
   // Format B state
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null)
@@ -114,15 +117,43 @@ export default function ReviewPage() {
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [summaryError, setSummaryError] = useState<string | null>(null)
 
+  const resetEditState = useCallback(() => {
+    setActions([])
+    setStates({})
+    setRewriteInput({})
+    setUserIntention('')
+    setSelectedIntents({})
+    setSubmitting(false)
+  }, [])
+
   useEffect(() => {
     fetch(`/api/sessions/${id}`)
       .then(r => r.json())
       .then(data => {
         setPayload(data.payload as EmailPayload | InboxPayload)
+        revisionRef.current = data.revision ?? 0
         setLoading(false)
       })
       .catch(() => { setError(true); setLoading(false) })
   }, [id])
+
+  // Poll for payload updates while waiting for agent rewrite
+  useEffect(() => {
+    if (!waitingForRewrite) return
+    const interval = setInterval(async () => {
+      try {
+        const data = await fetch(`/api/sessions/${id}`).then(r => r.json())
+        if (data.revision > revisionRef.current) {
+          revisionRef.current = data.revision
+          setPayload(data.payload as EmailPayload | InboxPayload)
+          resetEditState()
+          setWaitingForRewrite(false)
+          setRightView('draft')
+        }
+      } catch { /* ignore polling errors */ }
+    }, 1500)
+    return () => clearInterval(interval)
+  }, [waitingForRewrite, id, resetEditState])
 
   // Cmd+Enter to confirm & send
   useEffect(() => {
@@ -215,8 +246,22 @@ export default function ReviewPage() {
       headers: { 'Content-Type': 'application/json' },
       body,
     }).then(r => r.json())
-    if (result.callbackFailed) setCallbackFailed(true)
-    setSubmitted(true)
+
+    if (!confirmed && result.rewriting) {
+      // Regenerate: wait for agent to update payload
+      setWaitingForRewrite(true)
+      setSubmitting(false)
+      return
+    }
+
+    // Confirmed or rejected (non-regenerate): navigate home
+    if (result.callbackFailed) {
+      setCallbackFailed(true)
+      setSubmitted(true)
+      setTimeout(() => navigate('/'), 1500)
+    } else {
+      navigate('/')
+    }
   }
 
   if (error) return (
@@ -486,6 +531,14 @@ export default function ReviewPage() {
                   <p className="text-sm text-gray-500 mt-1">To: {inboxPayload.draft.to}</p>
                 </div>
 
+                {/* Waiting for rewrite indicator */}
+                {waitingForRewrite && (
+                  <div className="mb-6 p-4 bg-blue-50 border border-blue-100 rounded-lg flex items-center gap-3">
+                    <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0" />
+                    <p className="text-sm text-blue-600">Agent is rewriting the draft...</p>
+                  </div>
+                )}
+
                 {/* Paragraphs */}
                 <div className="space-y-3 mb-8">
                   {renderParagraphs(inboxPayload.draft.paragraphs)}
@@ -562,15 +615,15 @@ export default function ReviewPage() {
                 <div className="flex gap-3">
                   <button
                     onClick={() => submit(true)}
-                    disabled={submitting}
-                    className={`flex-1 bg-gray-900 text-white text-sm font-medium py-2.5 rounded-lg hover:bg-gray-700 transition-colors ${submitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={submitting || waitingForRewrite}
+                    className={`flex-1 bg-gray-900 text-white text-sm font-medium py-2.5 rounded-lg hover:bg-gray-700 transition-colors ${submitting || waitingForRewrite ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     Confirm & Send
                   </button>
                   <button
                     onClick={() => submit(false)}
-                    disabled={submitting}
-                    className={`px-4 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors ${submitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={submitting || waitingForRewrite}
+                    className={`px-4 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors ${submitting || waitingForRewrite ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     Regenerate
                   </button>
@@ -598,6 +651,14 @@ export default function ReviewPage() {
           <h1 className="text-xl font-semibold text-gray-800">{legacyPayload.subject}</h1>
           <p className="text-sm text-gray-500 mt-1">To: {legacyPayload.to}</p>
         </div>
+
+        {/* Waiting for rewrite indicator */}
+        {waitingForRewrite && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-100 rounded-lg flex items-center gap-3">
+            <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0" />
+            <p className="text-sm text-blue-600">Agent is rewriting the draft...</p>
+          </div>
+        )}
 
         {/* Paragraphs */}
         <div className="space-y-3 mb-8">
@@ -668,15 +729,15 @@ export default function ReviewPage() {
         <div className="flex gap-3">
           <button
             onClick={() => submit(true)}
-            disabled={submitting}
-            className={`flex-1 bg-gray-900 text-white text-sm font-medium py-2.5 rounded-lg hover:bg-gray-700 transition-colors ${submitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={submitting || waitingForRewrite}
+            className={`flex-1 bg-gray-900 text-white text-sm font-medium py-2.5 rounded-lg hover:bg-gray-700 transition-colors ${submitting || waitingForRewrite ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             Confirm & Send
           </button>
           <button
             onClick={() => submit(false)}
-            disabled={submitting}
-            className={`px-4 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors ${submitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={submitting || waitingForRewrite}
+            className={`px-4 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors ${submitting || waitingForRewrite ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             Regenerate
           </button>
