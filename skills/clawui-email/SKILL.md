@@ -5,6 +5,30 @@ description: Use this skill when you have finished writing an email draft and ne
 
 # ClawUI Email Review
 
+## Trigger Conditions (high priority)
+
+Use this skill by default when the user asks you to draft an email and review it before sending.
+
+Common trigger phrases include (Chinese or English):
+- "写好后让我审阅"
+- "先让我在浏览器里审阅"
+- "发之前让我看一下"
+- "先草拟邮件给我确认"
+- "write the email and let me review first"
+- "before sending, let me review"
+- "draft it and I will approve"
+
+If the request is an email draft + human review, prefer this skill over generic chat drafting.
+
+## Do Not Use These Alternatives
+
+For email review requests handled by this skill:
+- Do NOT use the `browser` tool to manually render a draft
+- Do NOT use the `canvas` tool to manually render a draft
+- Do NOT ask the user to review the draft directly in chat first
+
+Always submit to AgentClick via `POST /api/review` and let the user review in the AgentClick UI.
+
 When you have an email draft ready for user review, execute these steps **in order** using the bash tool.
 This workflow must be fast and mechanical:
 - NEVER use `/wait` (use only `GET /api/sessions/${SESSION_ID}`)
@@ -99,30 +123,40 @@ Rewrite rules (for speed and correctness):
 - Keep `inbox` exactly unchanged from the last payload
 - Keep `draft.subject`, `draft.to`, and `draft.replyTo` unchanged unless explicitly requested
 
-Then run this bash command to send the rewritten draft back:
+Then write the payload JSON to a temp file first (REQUIRED for stability, especially with Chinese/French/apostrophes), and send it with `-d @file`.
+
+Do NOT inline JSON directly in the curl command.
+
+Use this exact two-step pattern:
 
 ```bash
 echo "=== ENTERING STEP 4: REWRITING DRAFT ==="
+cat > /tmp/clawui_payload.json <<'JSON'
+{
+  "payload": {
+    "inbox": [... keep the same inbox array from Step 1 ...],
+    "draft": {
+      "replyTo": "e1",
+      "to": "RECIPIENT_EMAIL",
+      "subject": "Re: ORIGINAL_SUBJECT",
+      "paragraphs": [
+        {"id": "p1", "content": "NEW_REWRITTEN_PARAGRAPH_1"},
+        {"id": "p2", "content": "NEW_REWRITTEN_PARAGRAPH_2"}
+      ]
+    }
+  }
+}
+JSON
+
 HTTP_CODE=$(curl -s -o /tmp/clawui_put_response.txt -w "%{http_code}" \
   -X PUT "http://host.docker.internal:3001/api/sessions/${SESSION_ID}/payload" \
   -H "Content-Type: application/json" \
-  -d '{
-    "payload": {
-      "inbox": [... keep the same inbox array from Step 1 ...],
-      "draft": {
-        "replyTo": "e1",
-        "to": "RECIPIENT_EMAIL",
-        "subject": "Re: ORIGINAL_SUBJECT",
-        "paragraphs": [
-          {"id": "p1", "content": "NEW_REWRITTEN_PARAGRAPH_1"},
-          {"id": "p2", "content": "NEW_REWRITTEN_PARAGRAPH_2"}
-        ]
-      }
-    }
-  }')
+  -d @/tmp/clawui_payload.json)
 echo "=== PUT PAYLOAD DONE: HTTP $HTTP_CODE ==="
 cat /tmp/clawui_put_response.txt
 ```
+
+If HTTP is not `200`, fix the JSON file and retry Step 4. Do not continue polling with a failed PUT.
 
 **IMPORTANT:** Do NOT create a new session. Reuse the same `SESSION_ID`.
 **IMPORTANT:** Do not rewrite the whole email from scratch when only one paragraph changed.
