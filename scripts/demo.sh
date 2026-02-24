@@ -1,7 +1,7 @@
 #!/bin/bash
 # demo.sh — POST a mock email review session to AgentClick
 # Usage: ./scripts/demo.sh [type]
-#   type: email (default) | approval | code
+#   type: email (default) | approval | code | form | selection
 
 TYPE=${1:-email}
 BASE="http://localhost:3001"
@@ -32,6 +32,43 @@ case $TYPE in
           "explanation": "Clean build artifacts and rebuild the project.",
           "risk": "low",
           "files": ["src/index.ts", "src/pages/ReviewPage.tsx", "src/utils/helpers.ts", "package.json"]
+        }
+      }' | python3 -m json.tool
+    ;;
+  form)
+    curl -s -X POST "$BASE/api/review" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "type": "form_review",
+        "sessionKey": "demo-key",
+        "payload": {
+          "title": "Create Jira Ticket",
+          "description": "Agent wants to create a new engineering ticket.",
+          "risk": "low",
+          "fields": [
+            { "key": "project", "label": "Project", "value": "ENG", "editable": false },
+            { "key": "summary", "label": "Summary", "value": "Fix login timeout bug", "editable": true },
+            { "key": "priority", "label": "Priority", "value": "High", "editable": true, "options": ["Low", "Medium", "High", "Critical"] },
+            { "key": "assignee", "label": "Assignee", "value": "john@company.com", "editable": true }
+          ]
+        }
+      }' | python3 -m json.tool
+    ;;
+  selection)
+    curl -s -X POST "$BASE/api/review" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "type": "selection_review",
+        "sessionKey": "demo-key",
+        "payload": {
+          "question": "Which flight should I book for your NYC trip?",
+          "description": "Found 3 options matching your preferences.",
+          "options": [
+            { "id": "ua123", "title": "UA123 — 8:00 AM", "detail": "$450, 1 stop via ORD, 6h total", "recommended": false },
+            { "id": "aa456", "title": "AA456 — 10:30 AM", "detail": "$380, nonstop, 4.5h", "recommended": true },
+            { "id": "dl789", "title": "DL789 — 2:00 PM", "detail": "$520, nonstop, 4h", "recommended": false }
+          ],
+          "multiSelect": false
         }
       }' | python3 -m json.tool
     ;;
