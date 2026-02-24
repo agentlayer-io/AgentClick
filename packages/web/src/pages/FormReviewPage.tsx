@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 
 interface FormField {
   key: string
@@ -31,6 +31,7 @@ function RiskBadge({ risk }: { risk: 'low' | 'medium' | 'high' }) {
 
 export default function FormReviewPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [payload, setPayload] = useState<FormPayload | null>(null)
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({})
   const [note, setNote] = useState('')
@@ -69,8 +70,13 @@ export default function FormReviewPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ approved, fields, note }),
     }).then(r => r.json())
-    if (result.callbackFailed) setCallbackFailed(true)
-    setSubmitted(true)
+    if (result.callbackFailed) {
+      setCallbackFailed(true)
+      setSubmitted(true)
+      setTimeout(() => navigate('/'), 1500)
+    } else {
+      navigate('/')
+    }
   }
 
   if (error) return (

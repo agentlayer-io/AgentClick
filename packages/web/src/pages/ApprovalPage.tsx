@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 
 interface ApprovalPayload {
   action: string
@@ -22,6 +22,7 @@ function RiskBadge({ risk }: { risk: 'low' | 'medium' | 'high' }) {
 
 export default function ApprovalPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [payload, setPayload] = useState<ApprovalPayload | null>(null)
   const [note, setNote] = useState('')
   const [submitted, setSubmitted] = useState(false)
@@ -47,8 +48,13 @@ export default function ApprovalPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ approved, note })
     }).then(r => r.json())
-    if (result.callbackFailed) setCallbackFailed(true)
-    setSubmitted(true)
+    if (result.callbackFailed) {
+      setCallbackFailed(true)
+      setSubmitted(true)
+      setTimeout(() => navigate('/'), 1500)
+    } else {
+      navigate('/')
+    }
   }
 
   if (error) return (
