@@ -41,7 +41,7 @@ A browser tab opens automatically. Review, approve or reject, and close the tab.
 2. **User reviews, edits, and approves** in the browser -- paragraph-level delete/rewrite for emails, approve/reject for commands and actions.
 3. **Agent receives the result** via long-poll (`GET /api/sessions/:id/wait`) and continues execution.
 
-No WebSockets. No framework plugins. One HTTP endpoint in, one HTTP endpoint out.
+No WebSockets, no framework plugins. One HTTP endpoint in, one HTTP endpoint out.
 
 ---
 
