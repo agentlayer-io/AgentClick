@@ -2,8 +2,76 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --c-bg: #F8FAFC;
+  --c-surface: #FFFFFF;
+  --c-border: #F1F5F9;
+  --c-border-md: #E2E8F0;
+  --c-navy: #1D3557;
+  --c-teal: #2A9D8F;
+  --c-red: #E63946;
+  --c-blue: #457B9D;
+  --c-accent: #A8DADC;
+  --c-text: #1D3557;
+  --c-text-muted: #64748B;
+  --c-text-subtle: #94A3B8;
+  --c-cmd-header: #1D3557;
+  --c-cmd-header-text: #A8DADC;
+  --c-file-highlight: #F1FAEE;
+  --c-diff-add: #E6F4F1;
+  --c-diff-add-border: #2A9D8F;
+  --c-diff-remove: #FEECEE;
+  --c-diff-remove-border: #E63946;
+  --c-diff-hunk: #EBF4FA;
+  --c-diff-hunk-border: #A8DADC;
+  --c-file-header: #F8FAFC;
+  --c-status-m-bg: #EBF4FA;
+  --c-status-m-color: #457B9D;
+  --c-status-a-bg: #E8F5F0;
+  --c-status-a-color: #2A9D8F;
+  --c-status-d-bg: #FEF0F0;
+  --c-status-d-color: #E63946;
+  --c-status-r-bg: #FFF8EC;
+  --c-status-r-color: #E2A12A;
+}
+
+.dark {
+  --c-bg: #0F172A;
+  --c-surface: #1E293B;
+  --c-border: #1E293B;
+  --c-border-md: #334155;
+  --c-navy: #A8DADC;
+  --c-teal: #2A9D8F;
+  --c-red: #E63946;
+  --c-blue: #7DB3D0;
+  --c-accent: #457B9D;
+  --c-text: #F1FAEE;
+  --c-text-muted: #94A3B8;
+  --c-text-subtle: #64748B;
+  --c-cmd-header: #0F172A;
+  --c-cmd-header-text: #A8DADC;
+  --c-file-highlight: #1A3A2E;
+  --c-diff-add: #1A3A2E;
+  --c-diff-add-border: #2A9D8F;
+  --c-diff-remove: #3A1A1E;
+  --c-diff-remove-border: #E63946;
+  --c-diff-hunk: #1A2A3A;
+  --c-diff-hunk-border: #457B9D;
+  --c-file-header: #1E293B;
+  --c-status-m-bg: #1A2A3A;
+  --c-status-m-color: #7DB3D0;
+  --c-status-a-bg: #1A3A2E;
+  --c-status-a-color: #2A9D8F;
+  --c-status-d-bg: #3A1A1E;
+  --c-status-d-color: #E63946;
+  --c-status-r-bg: #2A2010;
+  --c-status-r-color: #E2A12A;
+}
+
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--c-bg);
+  color: var(--c-text);
 }
