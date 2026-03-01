@@ -174,10 +174,9 @@ function MindMapPill({ node, isHovered, isOnPath, isExpanded, hasDiffDescendant:
   hasDiffDescendant?: boolean  // dir contains files with diffs
   isSelected?: boolean  // file is currently selected for diff view
 }) {
-  // Affected file — strongest visual presence
-  if (node.type === 'file' && node.affected) {
+  // Affected file with diff — strongest visual presence (clickable)
+  if (node.type === 'file' && node.affected?.diff) {
     const s = STATUS_STYLE[node.affected.status]
-    const clickable = !!node.affected.diff
     return (
       <div
         data-pill
@@ -188,7 +187,7 @@ function MindMapPill({ node, isHovered, isOnPath, isExpanded, hasDiffDescendant:
           color: s.text,
           boxShadow: isSelected ? `0 0 0 2px ${s.border}` : isHovered ? '0 1px 6px rgba(0,0,0,0.07)' : 'none',
           transform: isHovered ? 'scale(1.04)' : 'none',
-          cursor: clickable ? 'pointer' : 'default',
+          cursor: 'pointer',
           transition: 'all 0.2s ease',
         }}
       >
@@ -197,6 +196,25 @@ function MindMapPill({ node, isHovered, isOnPath, isExpanded, hasDiffDescendant:
         {node.affected.status === 'renamed' && node.affected.oldPath && (
           <span className="font-normal opacity-50 text-[10px]">← {node.affected.oldPath.split('/').pop()}</span>
         )}
+      </div>
+    )
+  }
+
+  // Affected file without diff — subtle, not clickable
+  if (node.type === 'file' && node.affected) {
+    return (
+      <div
+        data-pill
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono whitespace-nowrap select-none"
+        style={{
+          backgroundColor: '#FAFAFC',
+          border: '1px solid #F0F1F3',
+          color: '#9CA3AF',
+          transition: 'all 0.2s ease',
+        }}
+      >
+        <span className="text-[9px] opacity-50">{STATUS_STYLE[node.affected.status].label}</span>
+        <span>{node.name}</span>
       </div>
     )
   }
