@@ -46,10 +46,10 @@ function sessionRisk(s: SessionItem): 'danger' | 'warning' | 'normal' {
 
 function riskBadge(risk: 'danger' | 'warning' | 'normal') {
   if (risk === 'danger') return (
-    <span className="text-xs px-2 py-0.5 rounded font-medium bg-red-50 text-red-500">Dangerous</span>
+    <span className="text-xs px-2 py-0.5 rounded font-medium bg-red-50 dark:bg-red-950 text-red-500">Dangerous</span>
   )
   if (risk === 'warning') return (
-    <span className="text-xs px-2 py-0.5 rounded font-medium bg-amber-50 text-amber-600">Medium Risk</span>
+    <span className="text-xs px-2 py-0.5 rounded font-medium bg-amber-50 dark:bg-amber-950 text-amber-600">Medium Risk</span>
   )
   return null
 }
@@ -69,20 +69,20 @@ export default function HomePage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
       <div className="max-w-2xl mx-auto py-10 px-4">
 
         <div className="mb-6">
-          <p className="text-xs text-zinc-400 uppercase tracking-wider mb-1">agentclick</p>
-          <h1 className="text-xl font-semibold text-zinc-900">Recent Sessions</h1>
+          <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider mb-1">agentclick</p>
+          <h1 className="text-xl font-semibold text-zinc-900 dark:text-slate-100">Recent Sessions</h1>
         </div>
 
         {loading && (
-          <p className="text-sm text-zinc-400">Loading...</p>
+          <p className="text-sm text-zinc-400 dark:text-slate-500">Loading...</p>
         )}
 
         {!loading && sessions.length === 0 && (
-          <p className="text-sm text-zinc-400">No sessions yet.</p>
+          <p className="text-sm text-zinc-400 dark:text-slate-500">No sessions yet.</p>
         )}
 
         {!loading && sessions.length > 0 && (
@@ -95,24 +95,26 @@ export default function HomePage() {
                 <Link
                   key={s.id}
                   to={sessionPath(s)}
-                  className={`flex items-center justify-between p-4 bg-white border border-gray-100 rounded-lg hover:border-gray-200 transition-colors ${borderClass}`}
+                  className={`flex items-center justify-between p-4 bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-lg hover:border-gray-200 dark:hover:border-slate-600 transition-colors ${borderClass}`}
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-zinc-800 truncate">
+                    <p className="text-sm font-medium text-zinc-800 dark:text-slate-200 truncate">
                       {s.subject ?? s.type}
                     </p>
                     {s.to && (
-                      <p className="text-xs text-zinc-400 mt-0.5 truncate">To: {s.to}</p>
+                      <p className="text-xs text-zinc-400 dark:text-slate-500 mt-0.5 truncate">To: {s.to}</p>
                     )}
                   </div>
                   <div className="flex items-center gap-3 shrink-0 ml-4">
                     {riskBadge(risk)}
                     <span className={`text-xs px-2 py-0.5 rounded font-medium ${
-                      s.status === 'completed' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'
+                      s.status === 'completed'
+                        ? 'bg-green-50 dark:bg-green-950 text-green-600 dark:text-green-400'
+                        : 'bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400'
                     }`}>
                       {s.status}
                     </span>
-                    <span className="text-xs text-zinc-400">{formatTime(s.createdAt)}</span>
+                    <span className="text-xs text-zinc-400 dark:text-slate-500">{formatTime(s.createdAt)}</span>
                   </div>
                 </Link>
               )
