@@ -160,10 +160,11 @@ function bezierD(x1: number, y1: number, x2: number, y2: number): string {
   return `M ${x1},${y1} C ${cx},${y1} ${cx},${y2} ${x2},${y2}`
 }
 
-function MindMapPill({ node, isHovered, isOnPath }: {
+function MindMapPill({ node, isHovered, isOnPath, isExpanded }: {
   node: FileTreeNode
   isHovered: boolean
   isOnPath: boolean
+  isExpanded?: boolean   // only meaningful for dirs
 }) {
   // Affected file — strongest visual presence
   if (node.type === 'file' && node.affected) {
@@ -190,22 +191,27 @@ function MindMapPill({ node, isHovered, isOnPath }: {
     )
   }
 
-  // Directory — light structural node
+  // Directory — light structural node, clickable with chevron
   if (node.type === 'dir') {
     const active = isOnPath || isHovered
+    const hasChildren = node.children && node.children.length > 0
     return (
       <div
         data-pill
-        className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-mono whitespace-nowrap select-none"
+        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono whitespace-nowrap select-none"
         style={{
           backgroundColor: active ? '#F1F5F9' : '#FAFAFC',
           border: `1px solid ${active ? '#CBD5E1' : '#F0F1F3'}`,
           color: active ? '#475569' : '#9CA3AF',
           fontWeight: 500,
+          cursor: hasChildren ? 'pointer' : 'default',
           transition: 'all 0.2s ease',
         }}
       >
-        {node.name}/
+        {hasChildren && (
+          <span className="text-[9px] opacity-50" style={{ transition: 'transform 0.2s ease', display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'none' }}>▸</span>
+        )}
+        <span>{node.name}/</span>
       </div>
     )
   }
@@ -237,12 +243,16 @@ function MindMapBranch({ node, depth, hoveredPath, onHover }: {
   const childrenRef = useRef<HTMLDivElement>(null)
   const [curves, setCurves] = useState<{ parentMid: number; childMids: number[] }>({ parentMid: 12, childMids: [] })
 
+  // Fold/unfold: depth < 2 starts expanded, deeper starts collapsed
+  const [expanded, setExpanded] = useState(depth < 2)
+
   const children = node.children ?? []
   const onPathKids = children.filter(c => c.onPath)
   const offPathKids = children.filter(c => !c.onPath)
   const shown  = [...onPathKids, ...offPathKids.slice(0, 1)]
   const hidden = offPathKids.length - Math.min(offPathKids.length, 1)
-  const totalSlots = shown.length + (hidden > 0 ? 1 : 0)
+  const hasChildren = children.length > 0
+  const totalSlots = expanded ? (shown.length + (hidden > 0 ? 1 : 0)) : 0
 
   useLayoutEffect(() => {
     if (!pillRef.current || !childrenRef.current || totalSlots === 0) return
@@ -274,13 +284,18 @@ function MindMapBranch({ node, depth, hoveredPath, onHover }: {
     hoveredPath === child.path || hoveredPath.startsWith(child.path + '/')
   )
 
+  const handlePillClick = () => {
+    if (node.type === 'dir' && hasChildren) setExpanded(e => !e)
+  }
+
   return (
     <div className="flex items-start">
       <div
         ref={pillRef}
         onMouseEnter={() => onHover(node.path)}
+        onClick={handlePillClick}
       >
-        <MindMapPill node={node} isHovered={isHovered} isOnPath={isOnHoverPath} />
+        <MindMapPill node={node} isHovered={isHovered} isOnPath={isOnHoverPath} isExpanded={expanded} />
       </div>
       {totalSlots > 0 && (
         <div style={{ position: 'relative' }}>
