@@ -99,3 +99,54 @@ export function learnFromDeletions(
   fs.appendFileSync(MEMORY_PATH, block, 'utf-8')
   console.log(`[agentclick] Learned ${rules.length} preference rule(s) -> ${MEMORY_PATH}`)
 }
+
+export interface LearnedPreference {
+  description: string
+  reason: string
+  scope: string
+}
+
+export function getLearnedPreferences(): LearnedPreference[] {
+  if (!fs.existsSync(MEMORY_PATH)) return []
+
+  const content = fs.readFileSync(MEMORY_PATH, 'utf-8')
+  const sectionStart = content.indexOf(SECTION_HEADER)
+  if (sectionStart === -1) return []
+
+  const sectionContent = content.slice(sectionStart + SECTION_HEADER.length)
+  const preferences: LearnedPreference[] = []
+
+  for (const line of sectionContent.split('\n')) {
+    const match = line.match(/^- AVOID: (.+?) \(reason: (.+?)\) - SCOPE: (.+)$/)
+    if (match) {
+      preferences.push({
+        description: match[1].trim(),
+        reason: match[2].trim(),
+        scope: match[3].trim(),
+      })
+    }
+  }
+
+  return preferences
+}
+
+export function clearPreferences(): void {
+  if (!fs.existsSync(MEMORY_PATH)) return
+
+  const content = fs.readFileSync(MEMORY_PATH, 'utf-8')
+  const lines = content.split('\n')
+  const headerIdx = lines.findIndex(l => l === SECTION_HEADER)
+  if (headerIdx === -1) return
+
+  // Find start of next ## section (or end of file)
+  let endIdx = lines.length
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    if (lines[i].startsWith('## ')) { endIdx = i; break }
+  }
+
+  // Also remove a preceding blank line if present
+  const start = headerIdx > 0 && lines[headerIdx - 1] === '' ? headerIdx - 1 : headerIdx
+  lines.splice(start, endIdx - start)
+
+  fs.writeFileSync(MEMORY_PATH, lines.join('\n'), 'utf-8')
+}

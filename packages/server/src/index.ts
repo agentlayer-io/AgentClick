@@ -5,7 +5,7 @@ import open from 'open'
 import { existsSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
-import { learnFromDeletions } from './preference.js'
+import { learnFromDeletions, getLearnedPreferences, clearPreferences } from './preference.js'
 import { createSession, getSession, listSessions, completeSession, setSessionRewriting, updateSessionPayload } from './store.js'
 
 const app = express()
@@ -79,6 +79,17 @@ app.get('/api/sessions', (_req, res) => {
     }
   })
   res.json(list)
+})
+
+// Learned preferences from MEMORY.md
+app.get('/api/preferences', (_req, res) => {
+  res.json({ preferences: getLearnedPreferences() })
+})
+
+app.delete('/api/preferences', (_req, res) => {
+  clearPreferences()
+  console.log('[agentclick] Cleared all learned preferences from MEMORY.md')
+  res.json({ ok: true })
 })
 
 // Web UI fetches session data

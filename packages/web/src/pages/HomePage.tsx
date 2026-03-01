@@ -12,6 +12,12 @@ interface SessionItem {
   command?: string
 }
 
+interface LearnedPreference {
+  description: string
+  reason: string
+  scope: string
+}
+
 function sessionPath(s: SessionItem): string {
   if (s.type === 'action_approval') return `/approval/${s.id}`
   if (s.type === 'code_review') return `/code-review/${s.id}`
@@ -57,16 +63,27 @@ function riskBadge(risk: 'danger' | 'warning' | 'normal') {
 export default function HomePage() {
   const [sessions, setSessions] = useState<SessionItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [preferences, setPreferences] = useState<LearnedPreference[]>([])
+  const [clearingPrefs, setClearingPrefs] = useState(false)
 
   useEffect(() => {
     fetch('/api/sessions')
       .then(r => r.json())
-      .then(data => {
-        setSessions(data)
-        setLoading(false)
-      })
+      .then(data => { setSessions(data); setLoading(false) })
       .catch(() => setLoading(false))
+
+    fetch('/api/preferences')
+      .then(r => r.json())
+      .then(data => setPreferences(data.preferences ?? []))
+      .catch(() => {})
   }, [])
+
+  const clearPreferences = async () => {
+    setClearingPrefs(true)
+    await fetch('/api/preferences', { method: 'DELETE' }).catch(() => {})
+    setPreferences([])
+    setClearingPrefs(false)
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-zinc-950">
@@ -121,6 +138,44 @@ export default function HomePage() {
             })}
           </div>
         )}
+
+        {/* Learned Preferences */}
+        <div className="mt-10">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider font-medium">Learned Preferences</p>
+              {preferences.length > 0 && (
+                <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-slate-500 font-medium">{preferences.length}</span>
+              )}
+            </div>
+            {preferences.length > 0 && (
+              <button
+                onClick={clearPreferences}
+                disabled={clearingPrefs}
+                className="text-xs text-zinc-300 dark:text-zinc-600 hover:text-red-400 dark:hover:text-red-400 transition-colors"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+
+          {preferences.length === 0 ? (
+            <p className="text-sm text-zinc-400 dark:text-slate-500">
+              No preferences learned yet. When you delete draft paragraphs with a reason, AgentClick remembers your style.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {preferences.map((pref, i) => (
+                <div key={i} className="flex items-start gap-2.5 p-3 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg">
+                  <span className="text-xs px-1.5 py-0.5 rounded font-medium shrink-0 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">
+                    {pref.reason.replace(/_/g, ' ')}
+                  </span>
+                  <p className="text-xs text-zinc-500 dark:text-slate-400 leading-relaxed">{pref.description}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
       </div>
     </div>
