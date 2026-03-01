@@ -166,25 +166,29 @@ function bezierD(x1: number, y1: number, x2: number, y2: number): string {
   return `M ${x1},${y1} C ${cx},${y1} ${cx},${y2} ${x2},${y2}`
 }
 
-function MindMapPill({ node, isHovered, isOnPath, isExpanded }: {
+function MindMapPill({ node, isHovered, isOnPath, isExpanded, hasDiffDescendant: hasDiff, isSelected }: {
   node: FileTreeNode
   isHovered: boolean
   isOnPath: boolean
   isExpanded?: boolean   // only meaningful for dirs
+  hasDiffDescendant?: boolean  // dir contains files with diffs
+  isSelected?: boolean  // file is currently selected for diff view
 }) {
   // Affected file — strongest visual presence
   if (node.type === 'file' && node.affected) {
     const s = STATUS_STYLE[node.affected.status]
+    const clickable = !!node.affected.diff
     return (
       <div
         data-pill
         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold whitespace-nowrap select-none"
         style={{
           backgroundColor: s.bg,
-          border: `1.5px solid ${isHovered ? s.text : s.border}`,
+          border: `1.5px solid ${isSelected ? s.text : isHovered ? s.text : s.border}`,
           color: s.text,
-          boxShadow: isHovered ? '0 1px 6px rgba(0,0,0,0.07)' : 'none',
+          boxShadow: isSelected ? `0 0 0 2px ${s.border}` : isHovered ? '0 1px 6px rgba(0,0,0,0.07)' : 'none',
           transform: isHovered ? 'scale(1.04)' : 'none',
+          cursor: clickable ? 'pointer' : 'default',
           transition: 'all 0.2s ease',
         }}
       >
@@ -201,15 +205,17 @@ function MindMapPill({ node, isHovered, isOnPath, isExpanded }: {
   if (node.type === 'dir') {
     const active = isOnPath || isHovered
     const hasChildren = node.children && node.children.length > 0
+    // Dirs containing diff'd files get a highlighted style
+    const diffAware = hasDiff && !isHovered
     return (
       <div
         data-pill
         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono whitespace-nowrap select-none"
         style={{
-          backgroundColor: active ? '#F1F5F9' : '#FAFAFC',
-          border: `1px solid ${active ? '#CBD5E1' : '#F0F1F3'}`,
-          color: active ? '#475569' : '#9CA3AF',
-          fontWeight: 500,
+          backgroundColor: diffAware ? '#EFF6FF' : active ? '#F1F5F9' : '#FAFAFC',
+          border: `1px solid ${diffAware ? '#93C5FD' : active ? '#CBD5E1' : '#F0F1F3'}`,
+          color: diffAware ? '#1E40AF' : active ? '#475569' : '#9CA3AF',
+          fontWeight: diffAware ? 600 : 500,
           cursor: hasChildren ? 'pointer' : 'default',
           transition: 'all 0.2s ease',
         }}
@@ -239,11 +245,14 @@ function MindMapPill({ node, isHovered, isOnPath, isExpanded }: {
   )
 }
 
-function MindMapBranch({ node, depth, hoveredPath, onHover }: {
+function MindMapBranch({ node, depth, hoveredPath, onHover, onLayoutChange, onFileClick, selectedFile }: {
   node: FileTreeNode
   depth: number
   hoveredPath: string | null
   onHover: (path: string | null) => void
+  onLayoutChange: () => void           // called when this branch changes height (expand/collapse)
+  onFileClick: (file: AffectedFile | null) => void
+  selectedFile: string | null
 }) {
   const pillRef = useRef<HTMLDivElement>(null)
   const childrenRef = useRef<HTMLDivElement>(null)
@@ -261,7 +270,10 @@ function MindMapBranch({ node, depth, hoveredPath, onHover }: {
   const totalSlots = expanded ? (shown.length + (hidden > 0 ? 1 : 0)) : 0
 
   useLayoutEffect(() => {
-    if (!pillRef.current || !childrenRef.current || totalSlots === 0) return
+    if (!pillRef.current || !childrenRef.current || totalSlots === 0) {
+      setCurves(prev => prev.childMids.length === 0 ? prev : { parentMid: pillRef.current ? pillRef.current.offsetHeight / 2 : 12, childMids: [] })
+      return
+    }
     const parentMid = pillRef.current.offsetHeight / 2
     const container = childrenRef.current
     const childMids: number[] = []
@@ -291,8 +303,17 @@ function MindMapBranch({ node, depth, hoveredPath, onHover }: {
   )
 
   const handlePillClick = () => {
-    if (node.type === 'dir' && hasChildren) setExpanded(e => !e)
+    if (node.type === 'dir' && hasChildren) {
+      setExpanded(e => !e)
+      // Notify parent that layout changed after React commits
+      requestAnimationFrame(onLayoutChange)
+    } else if (node.type === 'file' && node.affected?.diff) {
+      onFileClick(selectedFile === node.affected.path ? null : node.affected)
+    }
   }
+
+  const isSelected = node.type === 'file' && node.affected?.diff && selectedFile === node.affected.path
+  const hasDiff = node.type === 'dir' && hasDiffDescendant(node)
 
   return (
     <div className="flex items-start">
@@ -301,7 +322,7 @@ function MindMapBranch({ node, depth, hoveredPath, onHover }: {
         onMouseEnter={() => onHover(node.path)}
         onClick={handlePillClick}
       >
-        <MindMapPill node={node} isHovered={isHovered} isOnPath={isOnHoverPath} isExpanded={expanded} />
+        <MindMapPill node={node} isHovered={isHovered} isOnPath={isOnHoverPath} isExpanded={expanded} hasDiffDescendant={hasDiff} isSelected={!!isSelected} />
       </div>
       {totalSlots > 0 && (
         <div style={{ position: 'relative' }}>
@@ -345,6 +366,9 @@ function MindMapBranch({ node, depth, hoveredPath, onHover }: {
                   depth={depth + 1}
                   hoveredPath={hoveredPath}
                   onHover={onHover}
+                  onLayoutChange={onLayoutChange}
+                  onFileClick={onFileClick}
+                  selectedFile={selectedFile}
                 />
               </div>
             ))}
@@ -365,9 +389,12 @@ function MindMapBranch({ node, depth, hoveredPath, onHover }: {
   )
 }
 
-function MindMapFileTree({ nodes }: { nodes: FileTreeNode[] }) {
+function MindMapFileTree({ nodes, onFileClick, selectedFile }: { nodes: FileTreeNode[]; onFileClick: (file: AffectedFile | null) => void; selectedFile: string | null }) {
   const [hoveredPath, setHoveredPath] = useState<string | null>(null)
   const compressed = useMemo(() => nodes.map(compressNode), [nodes])
+  // Increment to force re-render (and thus re-measure bezier curves) when any branch toggles
+  const [, setLayoutVersion] = useState(0)
+  const bumpLayout = () => setLayoutVersion(v => v + 1)
   return (
     <div
       className="flex flex-col gap-4 overflow-x-auto py-2 pb-3"
@@ -380,6 +407,9 @@ function MindMapFileTree({ nodes }: { nodes: FileTreeNode[] }) {
           depth={0}
           hoveredPath={hoveredPath}
           onHover={setHoveredPath}
+          onLayoutChange={bumpLayout}
+          onFileClick={onFileClick}
+          selectedFile={selectedFile}
         />
       ))}
     </div>
@@ -517,6 +547,7 @@ export default function CodeReviewPage() {
   const navigate = useNavigate()
   const [payload, setPayload] = useState<CodePayload | null>(null)
   const [note, setNote] = useState('')
+  const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -615,7 +646,11 @@ export default function CodeReviewPage() {
               <p className="text-xs text-zinc-400 uppercase tracking-wider font-medium">Affected Files</p>
             </div>
             <div className="px-4 py-4">
-              <MindMapFileTree nodes={fileTree} />
+              <MindMapFileTree
+                nodes={fileTree}
+                onFileClick={(f) => setSelectedFile(f ? f.path : null)}
+                selectedFile={selectedFile}
+              />
             </div>
           </div>
         )}
@@ -623,8 +658,21 @@ export default function CodeReviewPage() {
         {/* Diffs */}
         {filesWithDiff.length > 0 && (
           <div className="mb-5">
-            <p className="text-xs text-zinc-400 uppercase tracking-wider mb-3 font-medium">Changes</p>
-            {filesWithDiff.map(f => <DiffViewer key={f.path} file={f} />)}
+            <div className="flex items-center gap-2 mb-3">
+              <p className="text-xs text-zinc-400 uppercase tracking-wider font-medium">Changes</p>
+              {selectedFile && (
+                <button
+                  className="text-[10px] text-blue-500 hover:text-blue-700 font-medium"
+                  onClick={() => setSelectedFile(null)}
+                >
+                  show all
+                </button>
+              )}
+            </div>
+            {selectedFile
+              ? filesWithDiff.filter(f => f.path === selectedFile).map(f => <DiffViewer key={f.path} file={f} />)
+              : filesWithDiff.map(f => <DiffViewer key={f.path} file={f} />)
+            }
           </div>
         )}
 
