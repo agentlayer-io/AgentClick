@@ -142,7 +142,7 @@ app.get('/api/sessions/:id/wait', async (req, res) => {
 })
 
 // Agent updates session payload after rewriting
-app.put('/api/sessions/:id/payload', (req, res) => {
+app.put('/api/sessions/:id/payload', async (req, res) => {
   const session = getSession(req.params.id)
   if (!session) return res.status(404).json({ error: 'Session not found' })
   if (session.status !== 'rewriting') return res.status(400).json({ error: 'Session is not in rewriting state' })
@@ -150,8 +150,43 @@ app.put('/api/sessions/:id/payload', (req, res) => {
   console.log(`[agentclick] Payload update requested for ${session.id} (status=${session.status}, revision=${session.revision})`)
   updateSessionPayload(req.params.id, req.body.payload)
   const updated = getSession(req.params.id)
-  console.log(`[agentclick] Session ${session.id} payload updated, back to pending (revision=${updated?.revision ?? 'unknown'})`)
-  res.json({ ok: true })
+  const newRevision = updated?.revision ?? session.revision + 1
+  console.log(`[agentclick] Session ${session.id} payload updated, back to pending (revision=${newRevision})`)
+
+  // Notify main agent that sub-agent completed a rewrite round
+  if (session.sessionKey) {
+    const priorResult = session.result as Record<string, unknown> | undefined
+    const actions = (priorResult?.actions ?? []) as Array<{ type: string; paragraphId: string; reason?: string; instruction?: string }>
+    const userIntention = priorResult?.userIntention as string | undefined
+    const rewrites = actions.filter(a => a.type === 'rewrite')
+    const deletes = actions.filter(a => a.type === 'delete')
+
+    const lines = [`[agentclick] Sub-agent rewrite complete (round ${newRevision}):`]
+    if (deletes.length > 0) lines.push(`- Removed ${deletes.length} paragraph(s): ${deletes.map(a => a.paragraphId).join(', ')}`)
+    if (rewrites.length > 0) lines.push(`- Rewrote: ${rewrites.map(a => `${a.paragraphId} — "${a.instruction}"`).join(', ')}`)
+    if (userIntention) lines.push(`- User intention: "${userIntention}"`)
+    lines.push('- Draft updated. Waiting for user to review.')
+
+    try {
+      await fetch(OPENCLAW_WEBHOOK, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.OPENCLAW_TOKEN || ''}`
+        },
+        body: JSON.stringify({
+          message: lines.join('\n'),
+          sessionKey: session.sessionKey,
+          deliver: false  // progress update, not a final delivery
+        })
+      })
+      console.log(`[agentclick] Rewrite progress notified to main agent (round ${newRevision})`)
+    } catch (err) {
+      console.warn(`[agentclick] Failed to notify main agent of rewrite progress:`, err)
+    }
+  }
+
+  res.json({ ok: true, revision: newRevision })
 })
 
 // Web UI submits user actions

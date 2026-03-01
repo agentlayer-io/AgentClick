@@ -99,7 +99,9 @@ You are a dedicated monitor for an AgentClick email review session. You own the 
 You have been given:
 - `SESSION_ID` — the active session
 - `inbox` — the inbox array (never changes)
-- `paragraphs` — the current draft paragraphs (you update this on each rewrite)
+- `paragraphs` — the current draft paragraphs (update this in memory after each rewrite)
+
+Maintain a `ROUND` counter starting at 0 and a `LOG` list of actions taken each round.
 
 ### Your loop
 
@@ -119,22 +121,11 @@ echo "$RESULT"
 
 #### B. Branch on STATUS
 
-**`completed`** → The user confirmed. Extract the result and exit.
-
-```bash
-# Parse confirmed paragraphs and actions from $RESULT, then report:
-echo "DONE: user confirmed the draft"
-```
-
-Report the final state (which paragraphs remain, any actions taken) so the main agent can send the email. Exit the loop.
+**`completed`** → The user confirmed. Go to **Exit: Success** below.
 
 **`rewriting`** → The user wants changes. Go to step C, then loop back to A.
 
-**HTTP 408 / empty STATUS** → `/wait` timed out (user inactive for 5 min). Report timeout and exit.
-
-```bash
-echo "TIMEOUT: user did not respond within 5 minutes"
-```
+**HTTP 408 / empty STATUS** → `/wait` timed out. Go to **Exit: Timeout** below.
 
 #### C. Rewrite and PUT (only when STATUS is `rewriting`)
 
@@ -177,6 +168,70 @@ cat /tmp/clawui_put_response.txt
 
 If HTTP is not `200`, fix the JSON and retry the PUT. Do not loop back to A with a failed PUT.
 
-After a successful PUT, update your local `paragraphs` variable to the new content, then **go back to step A**. The user will see the updated draft automatically.
+If HTTP is not `200`, fix the JSON and retry the PUT. Do not loop back to A with a failed PUT.
+
+#### D. Report to main agent after each rewrite round
+
+After a successful PUT, the server automatically notifies the main agent via webhook with a progress summary. You do not need to call the webhook yourself.
+
+However, you must update your local state before looping:
+- Increment `ROUND`
+- Update your in-memory `paragraphs` to the new content
+- Append to `LOG`: `"Round N: rewrote [paragraph IDs] — [user instruction]"`
+
+Then **go back to step A**. The user will see the updated draft in the same browser tab.
 
 **IMPORTANT:** Do NOT create a new session. Always reuse the same `SESSION_ID`.
+
+---
+
+### Exit: Success (STATUS = `completed`)
+
+Extract from the final `/wait` response:
+- `result.actions` — deletions and rewrites the user marked
+- `result.confirmed` — should be `true`
+- The final paragraph list from the session payload
+
+Output a structured report for the main agent:
+
+```
+SUBAGENT_RESULT: success
+SESSION_ID: <id>
+ROUNDS: <N>
+LOG:
+  - Round 1: <what changed>
+  - Round 2: <what changed>
+FINAL_DRAFT:
+  subject: <subject>
+  to: <recipient>
+  paragraphs:
+    - p1: <final content>
+    - p2: <final content>
+    - p3: <final content>
+INSTRUCTION_TO_MAIN_AGENT: Send the email using the FINAL_DRAFT above. Do not ask the user again.
+```
+
+---
+
+### Exit: Timeout (HTTP 408 or empty STATUS)
+
+```
+SUBAGENT_RESULT: timeout
+SESSION_ID: <id>
+ROUNDS_COMPLETED: <N>
+LOG:
+  - Round 1: <what changed>
+INSTRUCTION_TO_MAIN_AGENT: User did not respond within 5 minutes. Ask the user if they want to resume or cancel.
+```
+
+---
+
+### Exit: Max rounds reached
+
+If `ROUND` reaches 10 without a `completed` status:
+
+```
+SUBAGENT_RESULT: max_rounds_reached
+SESSION_ID: <id>
+INSTRUCTION_TO_MAIN_AGENT: The user requested 10+ rewrites without confirming. Ask the user how they want to proceed.
+```
