@@ -154,6 +154,12 @@ function compressNode(node: FileTreeNode): FileTreeNode {
   return { ...node, children }
 }
 
+// Does this subtree contain any file with a diff?
+function hasDiffDescendant(node: FileTreeNode): boolean {
+  if (node.affected?.diff) return true
+  return node.children?.some(hasDiffDescendant) ?? false
+}
+
 // Cubic bezier with horizontal tangents
 function bezierD(x1: number, y1: number, x2: number, y2: number): string {
   const cx = (x1 + x2) * 0.55
@@ -243,8 +249,8 @@ function MindMapBranch({ node, depth, hoveredPath, onHover }: {
   const childrenRef = useRef<HTMLDivElement>(null)
   const [curves, setCurves] = useState<{ parentMid: number; childMids: number[] }>({ parentMid: 12, childMids: [] })
 
-  // Fold/unfold: depth < 2 starts expanded, deeper starts collapsed
-  const [expanded, setExpanded] = useState(depth < 2)
+  // Auto-expand only dirs whose subtree contains a file with a diff
+  const [expanded, setExpanded] = useState(() => hasDiffDescendant(node))
 
   const children = node.children ?? []
   const onPathKids = children.filter(c => c.onPath)
