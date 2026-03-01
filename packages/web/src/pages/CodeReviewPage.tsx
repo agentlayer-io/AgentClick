@@ -32,9 +32,9 @@ interface FileTreeNode {
 
 function RiskBadge({ risk }: { risk: 'low' | 'medium' | 'high' }) {
   const styles: Record<string, string> = {
-    low:    'bg-green-50 text-green-700 border border-green-200',
-    medium: 'bg-amber-50 text-amber-700 border border-amber-200',
-    high:   'bg-red-50 text-red-500 border border-red-200',
+    low:    'bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800',
+    medium: 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800',
+    high:   'bg-red-50 dark:bg-red-950 text-red-500 dark:text-red-400 border border-red-200 dark:border-red-800',
   }
   return (
     <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded ${styles[risk]}`}>
@@ -47,10 +47,10 @@ function RiskBadge({ risk }: { risk: 'low' | 'medium' | 'high' }) {
 
 function StatusBadge({ status }: { status: AffectedFile['status'] }) {
   const cfg: Record<string, { label: string; bg: string; color: string }> = {
-    modified: { label: 'M', bg: '#EBF4FA', color: '#457B9D' },
-    added:    { label: 'A', bg: '#E8F5F0', color: '#2A9D8F' },
-    deleted:  { label: 'D', bg: '#FEF0F0', color: '#E63946' },
-    renamed:  { label: 'R', bg: '#FFF8EC', color: '#E2A12A' },
+    modified: { label: 'M', bg: 'var(--c-status-m-bg)', color: 'var(--c-status-m-color)' },
+    added:    { label: 'A', bg: 'var(--c-status-a-bg)', color: 'var(--c-status-a-color)' },
+    deleted:  { label: 'D', bg: 'var(--c-status-d-bg)', color: 'var(--c-status-d-color)' },
+    renamed:  { label: 'R', bg: 'var(--c-status-r-bg)', color: 'var(--c-status-r-color)' },
   }
   const { label, bg, color } = cfg[status] ?? cfg.modified
   return (
@@ -133,12 +133,12 @@ function buildFileTree(affectedFiles: AffectedFile[]): FileTreeNode[] {
 const CURVE_W   = 36   // horizontal width of bezier connector area
 const CHILD_GAP = 5    // vertical gap between sibling nodes
 
-// Low-saturation status palette
+// Status palette — uses CSS vars for dark mode support
 const STATUS_STYLE: Record<AffectedFile['status'], { bg: string; border: string; text: string; label: string }> = {
-  added:    { bg: '#F0FDF4', border: '#BBF7D0', text: '#15803D', label: 'A' },
-  modified: { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8', label: 'M' },
-  deleted:  { bg: '#FEF2F2', border: '#FECACA', text: '#B91C1C', label: 'D' },
-  renamed:  { bg: '#FFFBEB', border: '#FDE68A', text: '#A16207', label: 'R' },
+  added:    { bg: 'var(--c-pill-a-bg)', border: 'var(--c-pill-a-border)', text: 'var(--c-pill-a-text)', label: 'A' },
+  modified: { bg: 'var(--c-pill-m-bg)', border: 'var(--c-pill-m-border)', text: 'var(--c-pill-m-text)', label: 'M' },
+  deleted:  { bg: 'var(--c-pill-d-bg)', border: 'var(--c-pill-d-border)', text: 'var(--c-pill-d-text)', label: 'D' },
+  renamed:  { bg: 'var(--c-pill-r-bg)', border: 'var(--c-pill-r-border)', text: 'var(--c-pill-r-text)', label: 'R' },
 }
 
 // Compress single-child-dir chains: src/ → api/ becomes src/api/
@@ -207,9 +207,9 @@ function MindMapPill({ node, isHovered, isOnPath, isExpanded, hasDiffDescendant:
         data-pill
         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono whitespace-nowrap select-none"
         style={{
-          backgroundColor: '#FAFAFC',
-          border: '1px solid #F0F1F3',
-          color: '#9CA3AF',
+          backgroundColor: 'var(--c-dir-neutral-bg)',
+          border: '1px solid var(--c-dir-neutral-border)',
+          color: 'var(--c-dir-neutral-text)',
           transition: 'all 0.2s ease',
         }}
       >
@@ -229,9 +229,9 @@ function MindMapPill({ node, isHovered, isOnPath, isExpanded, hasDiffDescendant:
         data-pill
         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono whitespace-nowrap select-none"
         style={{
-          backgroundColor: diffAware ? '#EFF6FF' : active ? '#F1F5F9' : '#FAFAFC',
-          border: `1px solid ${diffAware ? '#93C5FD' : active ? '#CBD5E1' : '#F0F1F3'}`,
-          color: diffAware ? '#1E40AF' : active ? '#475569' : '#9CA3AF',
+          backgroundColor: diffAware ? 'var(--c-dir-diff-bg)' : active ? 'var(--c-dir-active-bg)' : 'var(--c-dir-neutral-bg)',
+          border: `1px solid ${diffAware ? 'var(--c-dir-diff-border)' : active ? 'var(--c-dir-active-border)' : 'var(--c-dir-neutral-border)'}`,
+          color: diffAware ? 'var(--c-dir-diff-text)' : active ? 'var(--c-dir-active-text)' : 'var(--c-dir-neutral-text)',
           fontWeight: diffAware ? 600 : 500,
           cursor: hasChildren ? 'pointer' : 'default',
           transition: 'all 0.2s ease',
@@ -251,9 +251,9 @@ function MindMapPill({ node, isHovered, isOnPath, isExpanded, hasDiffDescendant:
       data-pill
       className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-mono whitespace-nowrap select-none"
       style={{
-        backgroundColor: '#FAFAFC',
-        border: '1px solid #F0F1F3',
-        color: '#9CA3AF',
+        backgroundColor: 'var(--c-dir-neutral-bg)',
+        border: '1px solid var(--c-dir-neutral-border)',
+        color: 'var(--c-dir-neutral-text)',
         transition: 'all 0.2s ease',
       }}
     >
@@ -363,7 +363,7 @@ function MindMapBranch({ node, depth, hoveredPath, onHover, onLayoutChange, onFi
                   key={i}
                   d={bezierD(0, curves.parentMid, CURVE_W, cy)}
                   fill="none"
-                  stroke={highlight ? '#94A3B8' : '#E5E7EB'}
+                  stroke={highlight ? 'var(--c-curve-hi)' : 'var(--c-curve-lo)'}
                   strokeWidth={highlight ? 1.8 : 1}
                   style={{ transition: 'stroke 0.25s ease, stroke-width 0.25s ease' }}
                 />
@@ -393,7 +393,7 @@ function MindMapBranch({ node, depth, hoveredPath, onHover, onLayoutChange, onFi
               <div data-pill>
                 <div
                   className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-mono whitespace-nowrap select-none"
-                  style={{ backgroundColor: '#FAFAFC', border: '1px dashed #E5E7EB', color: '#9CA3AF' }}
+                  style={{ backgroundColor: 'var(--c-dir-neutral-bg)', border: '1px dashed var(--c-dir-neutral-border)', color: 'var(--c-dir-neutral-text)' }}
                 >
                   +{hidden} more
                 </div>
@@ -469,17 +469,17 @@ function parseDiff(diff: string): DiffLine[] {
 }
 
 function diffLineStyle(type: DiffLine['type']): React.CSSProperties {
-  if (type === 'added')   return { backgroundColor: '#E6F4F1', borderLeft: '3px solid #2A9D8F' }
-  if (type === 'removed') return { backgroundColor: '#FEECEE', borderLeft: '3px solid #E63946' }
-  if (type === 'hunk')    return { backgroundColor: '#EBF4FA', borderLeft: '3px solid #A8DADC' }
+  if (type === 'added')   return { backgroundColor: 'var(--c-diff-add)',    borderLeft: '3px solid var(--c-diff-add-border)' }
+  if (type === 'removed') return { backgroundColor: 'var(--c-diff-remove)', borderLeft: '3px solid var(--c-diff-remove-border)' }
+  if (type === 'hunk')    return { backgroundColor: 'var(--c-diff-hunk)',   borderLeft: '3px solid var(--c-diff-hunk-border)' }
   return {}
 }
 
 function diffLineColor(type: DiffLine['type']): string {
-  if (type === 'added')   return '#1A6B5E'
-  if (type === 'removed') return '#9B2335'
-  if (type === 'hunk')    return '#457B9D'
-  return '#374151'
+  if (type === 'added')   return 'var(--c-diff-add-border)'
+  if (type === 'removed') return 'var(--c-diff-remove-border)'
+  if (type === 'hunk')    return 'var(--c-blue)'
+  return 'var(--c-text-muted)'
 }
 
 function diffPrefix(type: DiffLine['type']): string {
@@ -495,21 +495,21 @@ function DiffViewer({ file }: { file: AffectedFile }) {
   if (!file.diff) return null
 
   return (
-    <div className="border border-gray-100 rounded-lg overflow-hidden mb-4">
+    <div className="border border-gray-100 dark:border-slate-700 rounded-lg overflow-hidden mb-4">
       {/* File header */}
       <div
         className="flex items-center justify-between px-3 py-2 cursor-pointer select-none"
-        style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}
+        style={{ backgroundColor: 'var(--c-file-header)', borderBottom: '1px solid var(--c-border-md)' }}
         onClick={() => setCollapsed(c => !c)}
       >
         <div className="flex items-center gap-2">
           <StatusBadge status={file.status} />
-          <span className="text-sm font-mono font-medium" style={{ color: '#1D3557' }}>{file.path}</span>
+          <span className="text-sm font-mono font-medium" style={{ color: 'var(--c-navy)' }}>{file.path}</span>
           {file.status === 'renamed' && file.oldPath && (
-            <span className="text-xs text-zinc-400">(was {file.oldPath})</span>
+            <span className="text-xs text-zinc-400 dark:text-slate-500">(was {file.oldPath})</span>
           )}
         </div>
-        <span className="text-xs text-zinc-400">{collapsed ? '▸ show diff' : '▾ hide diff'}</span>
+        <span className="text-xs text-zinc-400 dark:text-slate-500">{collapsed ? '▸ show diff' : '▾ hide diff'}</span>
       </div>
 
       {/* Diff lines */}
@@ -522,14 +522,14 @@ function DiffViewer({ file }: { file: AffectedFile }) {
                   {/* Old line number */}
                   <td
                     className="text-right px-2 py-0.5 select-none w-10 shrink-0"
-                    style={{ color: '#94a3b8', borderRight: '1px solid #E2E8F0', minWidth: '2.5rem' }}
+                    style={{ color: 'var(--c-text-subtle)', borderRight: '1px solid var(--c-border-md)', minWidth: '2.5rem' }}
                   >
                     {line.type === 'hunk' ? '' : (line.oldNo ?? '')}
                   </td>
                   {/* New line number */}
                   <td
                     className="text-right px-2 py-0.5 select-none w-10 shrink-0"
-                    style={{ color: '#94a3b8', borderRight: '1px solid #E2E8F0', minWidth: '2.5rem' }}
+                    style={{ color: 'var(--c-text-subtle)', borderRight: '1px solid var(--c-border-md)', minWidth: '2.5rem' }}
                   >
                     {line.type === 'hunk' ? '' : (line.newNo ?? '')}
                   </td>
@@ -605,62 +605,62 @@ export default function CodeReviewPage() {
   }
 
   if (error) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
       <p className="text-red-400 text-sm">Server not reachable — is AgentClick running?</p>
     </div>
   )
   if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p className="text-zinc-400">Loading...</p>
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
+      <p className="text-zinc-400 dark:text-slate-500">Loading...</p>
     </div>
   )
   if (!payload) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
       <p className="text-red-400">Session not found.</p>
     </div>
   )
   if (submitted) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
       <div className="text-center">
-        <p className="text-zinc-700 font-medium">Done. Your agent is continuing.</p>
+        <p className="text-zinc-700 dark:text-slate-200 font-medium">Done. Your agent is continuing.</p>
         {callbackFailed && <p className="text-amber-500 text-xs mt-2">Note: agent may not have received the callback.</p>}
-        <p className="text-zinc-400 text-sm mt-1">You can close this tab.</p>
+        <p className="text-zinc-400 dark:text-slate-500 text-sm mt-1">You can close this tab.</p>
       </div>
     </div>
   )
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
       <div className="max-w-3xl mx-auto py-10 px-4">
 
         {/* Header */}
         <div className="mb-6">
-          <p className="text-xs text-zinc-400 uppercase tracking-wider mb-1 font-medium">Code Review</p>
+          <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider mb-1 font-medium">Code Review</p>
           <div className="flex items-center gap-3 flex-wrap">
             <RiskBadge risk={payload.risk} />
-            <span className="text-xs text-zinc-400 font-mono">{payload.cwd}</span>
+            <span className="text-xs text-zinc-400 dark:text-slate-500 font-mono">{payload.cwd}</span>
           </div>
         </div>
 
         {/* Command */}
-        <div className="mb-4 rounded-lg overflow-hidden border border-gray-100">
-          <div className="px-3 py-2" style={{ backgroundColor: '#1D3557' }}>
-            <p className="text-xs font-medium" style={{ color: '#A8DADC' }}>Command</p>
+        <div className="mb-4 rounded-lg overflow-hidden border border-gray-100 dark:border-slate-700">
+          <div className="px-3 py-2" style={{ backgroundColor: 'var(--c-cmd-header)' }}>
+            <p className="text-xs font-medium" style={{ color: 'var(--c-cmd-header-text)' }}>Command</p>
           </div>
           <pre className="bg-zinc-950 text-zinc-100 px-4 py-3 text-sm font-mono overflow-x-auto leading-relaxed">{payload.command}</pre>
         </div>
 
         {/* Explanation */}
-        <div className="mb-5 p-4 bg-white border border-gray-100 rounded-lg">
-          <p className="text-xs text-zinc-400 uppercase tracking-wider mb-1 font-medium">What this does</p>
-          <p className="text-sm text-zinc-700 leading-relaxed">{payload.explanation}</p>
+        <div className="mb-5 p-4 bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-lg">
+          <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider mb-1 font-medium">What this does</p>
+          <p className="text-sm text-zinc-700 dark:text-slate-300 leading-relaxed">{payload.explanation}</p>
         </div>
 
         {/* Affected files — mind-map */}
         {fileTree.length > 0 && (
-          <div className="mb-5 bg-white border border-gray-100 rounded-lg overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-50">
-              <p className="text-xs text-zinc-400 uppercase tracking-wider font-medium">Affected Files</p>
+          <div className="mb-5 bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-lg overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-gray-50 dark:border-slate-700">
+              <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider font-medium">Affected Files</p>
             </div>
             <div className="px-4 py-4">
               <MindMapFileTree
@@ -676,10 +676,10 @@ export default function CodeReviewPage() {
         {filesWithDiff.length > 0 && (
           <div className="mb-5">
             <div className="flex items-center gap-2 mb-3">
-              <p className="text-xs text-zinc-400 uppercase tracking-wider font-medium">Changes</p>
+              <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider font-medium">Changes</p>
               {selectedFile && (
                 <button
-                  className="text-[10px] text-blue-500 hover:text-blue-700 font-medium"
+                  className="text-[10px] text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
                   onClick={() => setSelectedFile(null)}
                 >
                   show all
@@ -696,8 +696,7 @@ export default function CodeReviewPage() {
         {/* Note */}
         <div className="mb-6">
           <textarea
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 text-zinc-700 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:border-transparent resize-none"
-            style={{ '--tw-ring-color': '#457B9D' } as React.CSSProperties}
+            className="w-full text-sm border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2.5 text-zinc-700 dark:text-slate-300 bg-white dark:bg-slate-800 placeholder-zinc-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent resize-none"
             rows={3}
             placeholder="Add a note or modified command (optional)"
             value={note}
@@ -711,7 +710,7 @@ export default function CodeReviewPage() {
             onClick={() => submit(true)}
             disabled={submitting}
             className={`flex-1 text-sm font-semibold py-2.5 rounded-lg transition-opacity ${submitting ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90'}`}
-            style={{ backgroundColor: '#2A9D8F', color: '#F1FAEE' }}
+            style={{ backgroundColor: 'var(--c-teal)', color: 'var(--c-bg)' }}
           >
             Approve
           </button>
@@ -719,7 +718,7 @@ export default function CodeReviewPage() {
             onClick={() => submit(false)}
             disabled={submitting}
             className={`px-6 text-sm font-semibold py-2.5 rounded-lg transition-opacity ${submitting ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90'}`}
-            style={{ border: '1.5px solid #E63946', color: '#E63946', backgroundColor: 'transparent' }}
+            style={{ border: '1.5px solid var(--c-red)', color: 'var(--c-red)', backgroundColor: 'transparent' }}
           >
             Reject
           </button>
