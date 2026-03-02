@@ -79,7 +79,19 @@ export default function HomePage() {
 
         <div className="mb-6">
           <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider mb-1">agentclick</p>
-          <h1 className="text-xl font-semibold text-zinc-900 dark:text-slate-100">Recent Sessions</h1>
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-semibold text-zinc-900 dark:text-slate-100">Recent Sessions</h1>
+            <button
+              onClick={() => navigate('/preferences')}
+              className="flex items-center gap-1.5 text-sm text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+            >
+              Preferences
+              {prefCount !== null && prefCount > 0 && (
+                <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 font-medium">{prefCount}</span>
+              )}
+              <span className="text-zinc-300 dark:text-zinc-600">›</span>
+            </button>
+          </div>
         </div>
 
         {loading && (
@@ -127,25 +139,6 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Preferences disclosure row */}
-        <div className="mt-8 border-t border-gray-100 dark:border-zinc-800 pt-4">
-          <button
-            onClick={() => navigate('/preferences')}
-            className="w-full flex items-center justify-between py-2 group"
-          >
-            <span className="text-sm text-zinc-500 dark:text-slate-400 group-hover:text-zinc-700 dark:group-hover:text-slate-200 transition-colors">
-              Learned Preferences
-            </span>
-            <div className="flex items-center gap-2">
-              {prefCount !== null && prefCount > 0 && (
-                <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 font-medium">
-                  {prefCount}
-                </span>
-              )}
-              <span className="text-zinc-300 dark:text-zinc-600 group-hover:text-zinc-500 dark:group-hover:text-zinc-400 transition-colors text-sm">›</span>
-            </div>
-          </button>
-        </div>
 
       </div>
     </div>
