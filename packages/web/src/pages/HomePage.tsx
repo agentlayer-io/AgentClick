@@ -16,6 +16,8 @@ interface SessionItem {
 function sessionPath(s: SessionItem): string {
   if (s.type === 'action_approval') return `/approval/${s.id}`
   if (s.type === 'code_review') return `/code-review/${s.id}`
+  if (s.type === 'form_review') return `/form-review/${s.id}`
+  if (s.type === 'selection_review') return `/selection/${s.id}`
   return `/review/${s.id}`
 }
 
