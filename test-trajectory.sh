@@ -10,7 +10,7 @@ SESSION_PAYLOAD='{
   "sessionKey": "main-session",
   "payload": {
     "title": "Deploying to staging",
-    "description": "Attempted to deploy the latest build to the staging environment via SSH after locating the correct config.",
+    "description": "Orchestrator agent delegated to sub-agents for build verification before deploying via SSH.",
     "steps": [
       {
         "id": "s1",
@@ -45,11 +45,15 @@ SESSION_PAYLOAD='{
       },
       {
         "id": "s4",
-        "type": "tool_call",
+        "type": "terminal",
         "label": "SSH to staging server",
-        "detail": "ssh -i ~/.ssh/deploy_staging deploy@staging.example.com",
         "status": "failure",
         "duration": 5023,
+        "terminal": {
+          "command": "ssh -i ~/.ssh/deploy_staging deploy@staging.example.com",
+          "exitCode": 1,
+          "output": "ssh: connect to host staging.example.com port 22: Connection refused"
+        },
         "error": {
           "message": "Connection refused",
           "code": "ECONNREFUSED",
@@ -64,11 +68,15 @@ SESSION_PAYLOAD='{
           },
           {
             "id": "s4.2",
-            "type": "tool_call",
-            "label": "Verified VPN status: connected to corp network",
-            "detail": "vpn status => connected (corp-vpn-west-2)",
+            "type": "terminal",
+            "label": "Verified VPN status",
             "status": "success",
-            "duration": 340
+            "duration": 340,
+            "terminal": {
+              "command": "vpn status",
+              "exitCode": 0,
+              "output": "connected (corp-vpn-west-2)"
+            }
           },
           {
             "id": "s4.3",
@@ -82,45 +90,159 @@ SESSION_PAYLOAD='{
       },
       {
         "id": "s5",
-        "type": "tool_call",
+        "type": "terminal",
         "label": "Pulled latest code on staging server",
-        "detail": "cd /opt/app && git pull origin main",
         "status": "success",
-        "duration": 4200
+        "duration": 4200,
+        "terminal": {
+          "command": "cd /opt/app && git pull origin main",
+          "exitCode": 0,
+          "output": "Already up to date.\n * branch main -> FETCH_HEAD"
+        }
       },
       {
         "id": "s6",
-        "type": "tool_call",
-        "label": "Ran database migrations",
-        "detail": "npm run migrate",
+        "type": "agent_call",
+        "label": "Delegated build verification to CI agent",
         "status": "success",
-        "duration": 8500
+        "duration": 23400,
+        "agent": { "name": "ci-verifier", "model": "claude-haiku-4-5" },
+        "children": [
+          {
+            "id": "s6.1",
+            "type": "terminal",
+            "label": "Install dependencies",
+            "status": "success",
+            "duration": 12000,
+            "terminal": {
+              "command": "npm ci --production",
+              "exitCode": 0
+            }
+          },
+          {
+            "id": "s6.2",
+            "type": "terminal",
+            "label": "Run linter",
+            "status": "success",
+            "duration": 3200,
+            "parallel": true,
+            "terminal": {
+              "command": "npm run lint",
+              "exitCode": 0
+            }
+          },
+          {
+            "id": "s6.3",
+            "type": "terminal",
+            "label": "Run tests",
+            "status": "failure",
+            "duration": 8100,
+            "parallel": true,
+            "terminal": {
+              "command": "npm test",
+              "exitCode": 1,
+              "output": "FAIL src/deploy.test.ts\n  \u2715 should validate config (12ms)\n  \u2715 should handle timeout (45ms)"
+            },
+            "error": {
+              "message": "2 tests failed",
+              "code": "TEST_FAILURE"
+            },
+            "children": [
+              {
+                "id": "s6.3.1",
+                "type": "retry",
+                "label": "Re-run failed tests with --retry",
+                "status": "success",
+                "duration": 6500,
+                "terminal": {
+                  "command": "npm test -- --retry 1",
+                  "exitCode": 0
+                }
+              }
+            ]
+          },
+          {
+            "id": "s6.4",
+            "type": "observation",
+            "label": "All checks passed after retry",
+            "status": "success"
+          }
+        ]
       },
       {
         "id": "s7",
-        "type": "tool_call",
-        "label": "Restarted application service",
-        "detail": "sudo systemctl restart app.service",
+        "type": "agent_call",
+        "label": "Delegated database migration to DBA agent",
         "status": "success",
-        "duration": 2100
+        "duration": 9200,
+        "agent": { "name": "dba-agent", "model": "claude-sonnet-4-6" },
+        "parallel": true,
+        "children": [
+          {
+            "id": "s7.1",
+            "type": "tool_call",
+            "label": "Checked pending migrations",
+            "detail": "2 pending: 042_add_index.sql, 043_alter_users.sql",
+            "status": "success",
+            "duration": 700
+          },
+          {
+            "id": "s7.2",
+            "type": "terminal",
+            "label": "Applied migrations",
+            "status": "success",
+            "duration": 8500,
+            "terminal": {
+              "command": "npm run migrate",
+              "exitCode": 0,
+              "output": "Migration 042_add_index.sql applied\nMigration 043_alter_users.sql applied"
+            }
+          }
+        ]
       },
       {
         "id": "s8",
-        "type": "tool_call",
-        "label": "Health check on staging",
-        "detail": "curl -f http://staging.example.com/health => {\"status\":\"ok\",\"version\":\"2.4.1\"}",
+        "type": "agent_call",
+        "label": "Delegated service restart to infra agent",
         "status": "success",
-        "duration": 450
+        "duration": 3100,
+        "agent": { "name": "infra-agent" },
+        "parallel": true,
+        "children": [
+          {
+            "id": "s8.1",
+            "type": "terminal",
+            "label": "Restarted application service",
+            "status": "success",
+            "duration": 2100,
+            "terminal": {
+              "command": "sudo systemctl restart app.service",
+              "exitCode": 0
+            }
+          },
+          {
+            "id": "s8.2",
+            "type": "terminal",
+            "label": "Health check",
+            "status": "success",
+            "duration": 450,
+            "terminal": {
+              "command": "curl -f http://staging.example.com/health",
+              "exitCode": 0,
+              "output": "{\"status\":\"ok\",\"version\":\"2.4.1\"}"
+            }
+          }
+        ]
       },
       {
         "id": "s9",
         "type": "observation",
-        "label": "Deploy complete — staging is running v2.4.1",
+        "label": "Deploy complete \u2014 staging is running v2.4.1",
         "status": "success"
       }
     ],
     "context": {
-      "model": "claude-sonnet-4-20250514",
+      "model": "claude-sonnet-4-6",
       "taskId": "deploy-staging-042",
       "trigger": "user request"
     }
@@ -142,14 +264,14 @@ echo ""
 echo "The browser should open automatically."
 echo ""
 echo "What you can test in the UI:"
-echo "  - Expand step details (click Show detail)"
-echo "  - View error panel + stack trace on step s4"
-echo "  - Mark Wrong on any step (e.g. s4 — SSH without VPN check)"
-echo "  - Add Guidance on any step"
-echo "  - Check 'Remember this for future runs' to persist a rule"
-echo "  - Set Resume From Step dropdown"
-echo "  - Add a global note"
-echo "  - Approve, Request Retry, or Reject"
+echo "  - DAG with parallel branches (s7 DBA + s8 infra side-by-side)"
+echo "  - Agent call nodes (s6 ci-verifier, s7 dba-agent, s8 infra-agent)"
+echo "  - Terminal nodes with command/output (s4, s5, s6.x)"
+echo "  - Nested sub-agent steps (click s6 to see ci-verifier's children)"
+echo "  - Failure branch with retry (s6.3 -> s6.3.1)"
+echo "  - Collapse/expand any node with children"
+echo "  - Hover to highlight connected path"
+echo "  - Click node for detail panel with Mark Wrong / Add Guidance"
 echo ""
 echo "Check session status:"
 echo "  curl $AGENTCLICK_URL/api/sessions/$SESSION_ID"
