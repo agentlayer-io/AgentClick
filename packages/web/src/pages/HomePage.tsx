@@ -10,14 +10,16 @@ interface SessionItem {
   to?: string
   risk?: string
   command?: string
+  title?: string
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  email_review:     'Email',
-  code_review:      'Code',
-  action_approval:  'Approval',
-  form_review:      'Form',
-  selection_review: 'Selection',
+  email_review:      'Email',
+  code_review:       'Code',
+  action_approval:   'Approval',
+  form_review:       'Form',
+  selection_review:  'Selection',
+  trajectory_review: 'Trajectory',
 }
 
 function sessionPath(s: SessionItem): string {
@@ -25,10 +27,12 @@ function sessionPath(s: SessionItem): string {
   if (s.type === 'code_review') return `/code-review/${s.id}`
   if (s.type === 'form_review') return `/form-review/${s.id}`
   if (s.type === 'selection_review') return `/selection/${s.id}`
+  if (s.type === 'trajectory_review') return `/trajectory/${s.id}`
   return `/review/${s.id}`
 }
 
 function sessionTitle(s: SessionItem): string {
+  if (s.title) return s.title
   if (s.subject) return s.subject
   if (s.type === 'code_review' && s.command) return s.command
   return TYPE_LABELS[s.type] ?? s.type

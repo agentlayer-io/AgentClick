@@ -5,7 +5,7 @@ import open from 'open'
 import { existsSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
-import { learnFromDeletions, getLearnedPreferences, clearPreferences, deletePreference } from './preference.js'
+import { learnFromDeletions, learnFromTrajectoryRevisions, getLearnedPreferences, clearPreferences, deletePreference } from './preference.js'
 import { createSession, getSession, listSessions, completeSession, setSessionRewriting, updateSessionPayload } from './store.js'
 
 const app = express()
@@ -46,6 +46,7 @@ app.post('/api/review', async (req, res) => {
     code_review: 'code-review',
     form_review: 'form-review',
     selection_review: 'selection',
+    trajectory_review: 'trajectory',
   }
   const path = routeMap[type] ?? 'review'
   const url = `${WEB_ORIGIN}/${path}/${id}`
@@ -79,6 +80,7 @@ app.get('/api/sessions', (_req, res) => {
       to: (draft?.to ?? p?.to) as string | undefined,
       risk: p?.risk as string | undefined,
       command: p?.command as string | undefined,
+      title: p?.title as string | undefined,
     }
   })
   res.json(list)
@@ -218,6 +220,12 @@ app.post('/api/sessions/:id/complete', async (req, res) => {
   const actions = (req.body.actions ?? []) as Array<{ type: string; paragraphId: string; reason?: string; instruction?: string }>
   learnFromDeletions(actions, session.payload as Record<string, unknown>)
 
+  // Learn from trajectory revisions
+  const revisions = req.body.revisions as Array<{ stepId: string; action: 'mark_wrong' | 'provide_guidance' | 'skip'; correction?: string; guidance?: string; shouldLearn?: boolean }> | undefined
+  if (revisions && revisions.length > 0) {
+    learnFromTrajectoryRevisions(revisions, session.payload as { title: string; steps: Array<{ id: string; label: string }> })
+  }
+
   // Send result back to OpenClaw
   let callbackFailed = false
   let callbackError = ''
@@ -249,6 +257,23 @@ async function callWebhook(body: Record<string, unknown>): Promise<void> {
 }
 
 function buildActionSummary(result: Record<string, unknown>): string {
+  // Trajectory review: has revisions array
+  if ('revisions' in result && Array.isArray(result.revisions)) {
+    const approved = result.approved as boolean
+    const revisions = result.revisions as Array<{ stepId: string; action: string; correction?: string; guidance?: string }>
+    const globalNote = result.globalNote as string | undefined
+    const resumeFromStep = result.resumeFromStep as string | undefined
+    const lines = ['[agentclick] User reviewed the trajectory:']
+    lines.push(approved ? '- Approved: proceed.' : '- Rejected: do not proceed.')
+    const wrong = revisions.filter(r => r.action === 'mark_wrong')
+    const guided = revisions.filter(r => r.action === 'provide_guidance')
+    if (wrong.length > 0) lines.push(`- Marked ${wrong.length} step(s) as wrong: ${wrong.map(r => `${r.stepId}${r.correction ? ` — "${r.correction}"` : ''}`).join(', ')}`)
+    if (guided.length > 0) lines.push(`- Guidance for ${guided.length} step(s): ${guided.map(r => `${r.stepId} — "${r.guidance}"`).join(', ')}`)
+    if (resumeFromStep) lines.push(`- Resume from step: ${resumeFromStep}`)
+    if (globalNote) lines.push(`- Note: ${globalNote}`)
+    return lines.join('\n')
+  }
+
   // If result has approved field, it's an action_approval or code_review
   if ('approved' in result) {
     const approved = result.approved as boolean
