@@ -393,6 +393,9 @@ export default function ReviewPage() {
         <div className="flex flex-1 min-h-0">
         {/* Left Panel — Inbox List */}
         <div className="w-72 shrink-0 bg-white dark:bg-zinc-900 border-r border-gray-100 dark:border-zinc-800 overflow-y-auto">
+          {!isCompleted && (
+            <button onClick={() => navigate('/')} className="text-sm text-zinc-400 dark:text-slate-500 hover:text-zinc-600 dark:hover:text-slate-300 transition-colors p-4 block border-b border-gray-50 dark:border-zinc-800 w-full text-left">← Back</button>
+          )}
           {visibleEmails.length === 0 ? (
             <p className="text-sm text-zinc-400 dark:text-slate-500 p-4">No unread emails.</p>
           ) : (
@@ -688,6 +691,10 @@ export default function ReviewPage() {
             <p className="text-sm text-zinc-500 dark:text-zinc-400">This session has been completed.</p>
             <button onClick={() => navigate('/')} className="text-sm text-blue-400 hover:text-blue-500 transition-colors">← Back</button>
           </div>
+        )}
+
+        {!isCompleted && (
+          <button onClick={() => navigate('/')} className="text-sm text-zinc-400 dark:text-slate-500 hover:text-zinc-600 dark:hover:text-slate-300 transition-colors mb-6 block">← Back</button>
         )}
 
         {/* Header */}

@@ -104,6 +104,10 @@ export default function ApprovalPage() {
           </div>
         )}
 
+        {!isCompleted && (
+          <button onClick={() => navigate('/')} className="text-sm text-zinc-400 dark:text-slate-500 hover:text-zinc-600 dark:hover:text-slate-300 transition-colors mb-6 block">← Back</button>
+        )}
+
         {/* Header */}
         <div className="mb-6">
           <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider mb-1">Action Approval</p>
