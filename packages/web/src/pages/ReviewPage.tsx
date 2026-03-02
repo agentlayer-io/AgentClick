@@ -68,6 +68,7 @@ const REASONS = [
   { key: 'wrong_tone',  label: 'Wrong tone' },
   { key: 'off_topic',   label: 'Off topic' },
   { key: 'redundant',   label: 'Redundant' },
+  { key: 'inaccurate',  label: 'Inaccurate' },
 ]
 
 function reasonLabel(key: string): string {
