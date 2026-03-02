@@ -65,6 +65,47 @@ app.post('/api/review', async (req, res) => {
   res.json({ sessionId: id, url })
 })
 
+// Batch create sessions silently (no browser open)
+app.post('/api/review/batch', (req, res) => {
+  const items = req.body.sessions
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'sessions must be a non-empty array' })
+  }
+
+  const routeMap: Record<string, string> = {
+    action_approval: 'approval',
+    code_review: 'code-review',
+    form_review: 'form-review',
+    selection_review: 'selection',
+    trajectory_review: 'trajectory',
+  }
+
+  const results = items.map((item: { type?: string; sessionKey?: string; payload?: unknown }) => {
+    const { type, sessionKey, payload } = item
+    if (!sessionKey) {
+      console.warn('[agentclick] Warning: sessionKey missing in batch item — callback will be skipped')
+    }
+    const now = Date.now()
+    const id = `session_${now}_${Math.random().toString(36).slice(2, 7)}`
+    createSession({
+      id,
+      type: type || 'email_review',
+      payload,
+      sessionKey,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+      revision: 0,
+    })
+    const path = routeMap[type ?? ''] ?? 'review'
+    const url = `${WEB_ORIGIN}/${path}/${id}`
+    console.log(`[agentclick] Review session created (silent): ${id}`)
+    return { sessionId: id, url }
+  })
+
+  res.json({ sessions: results })
+})
+
 // List recent sessions for homepage
 app.get('/api/sessions', (_req, res) => {
   const list = listSessions(20).map(s => {
