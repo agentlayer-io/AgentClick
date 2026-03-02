@@ -22,7 +22,7 @@ app.use(express.json())
 
 // OpenClaw calls this when a review is needed
 app.post('/api/review', async (req, res) => {
-  const { type, sessionKey, payload } = req.body
+  const { type, sessionKey, payload, noOpen } = req.body
 
   if (!sessionKey) {
     console.warn('[agentclick] Warning: sessionKey missing — callback will be skipped')
@@ -49,13 +49,16 @@ app.post('/api/review', async (req, res) => {
   }
   const path = routeMap[type] ?? 'review'
   const url = `${WEB_ORIGIN}/${path}/${id}`
-  console.log(`[agentclick] Review session created: ${id}`)
-  console.log(`[agentclick] Opening browser: ${url}`)
-
-  try {
-    await open(url)
-  } catch (err) {
-    console.warn('[agentclick] Failed to open browser:', err)
+  if (noOpen) {
+    console.log(`[agentclick] Review session created (silent): ${id}`)
+  } else {
+    console.log(`[agentclick] Review session created: ${id}`)
+    console.log(`[agentclick] Opening browser: ${url}`)
+    try {
+      await open(url)
+    } catch (err) {
+      console.warn('[agentclick] Failed to open browser:', err)
+    }
   }
 
   res.json({ sessionId: id, url })
