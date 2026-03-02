@@ -83,7 +83,7 @@ export default function HomePage() {
             <h1 className="text-xl font-semibold text-zinc-900 dark:text-slate-100">Recent Sessions</h1>
             <button
               onClick={() => navigate('/preferences')}
-              className="flex items-center gap-1.5 text-sm text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+              className="flex items-center gap-1.5 text-sm text-blue-400 dark:text-blue-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
             >
               Preferences
               {prefCount !== null && prefCount > 0 && (
