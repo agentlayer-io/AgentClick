@@ -7,7 +7,23 @@ interface LearnedPreference {
   scope: string
 }
 
-const REASON_COLOR = 'bg-blue-50 dark:bg-blue-950 text-blue-500 dark:text-blue-400'
+const REASON_COLORS: Record<string, string> = {
+  too_formal:   'bg-blue-50 dark:bg-blue-950 text-blue-500 dark:text-blue-400',
+  too_casual:   'bg-blue-50 dark:bg-blue-950 text-blue-500 dark:text-blue-400',
+  wrong_tone:   'bg-blue-50 dark:bg-blue-950 text-blue-500 dark:text-blue-400',
+  too_polite:   'bg-blue-50 dark:bg-blue-950 text-blue-500 dark:text-blue-400',
+  too_long:     'bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400',
+  off_topic:    'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400',
+  redundant:    'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400',
+  repetitive:   'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400',
+  unnecessary:  'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400',
+  inaccurate:   'bg-red-50 dark:bg-red-950 text-red-500 dark:text-red-400',
+}
+
+function reasonColor(reason: string): string {
+  const key = reason.toLowerCase().replace(/ /g, '_')
+  return REASON_COLORS[key] ?? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'
+}
 
 export default function PreferencesPage() {
   const navigate = useNavigate()
@@ -71,7 +87,7 @@ export default function PreferencesPage() {
                   key={i}
                   className="flex items-start gap-3 p-4 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg"
                 >
-                  <span className={`text-xs px-2 py-0.5 rounded font-medium shrink-0 mt-0.5 ${REASON_COLOR}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded font-medium shrink-0 mt-0.5 ${reasonColor(pref.reason)}`}>
                     {pref.reason.replace(/_/g, ' ')}
                   </span>
                   <p className="text-sm text-zinc-600 dark:text-slate-300 leading-relaxed">{pref.description}</p>
