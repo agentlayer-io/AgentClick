@@ -94,6 +94,7 @@ export default function HomePage() {
           pendingIdsRef.current = nextIds
           setPending(nextPending)
           setCompletedCount(data.filter(s => s.status === 'completed').length)
+          document.title = nextPending.length > 0 ? `(${nextPending.length}) AgentClick` : 'AgentClick'
         }
         if (initial) setLoading(false)
       })
