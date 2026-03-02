@@ -624,16 +624,6 @@ export default function CodeReviewPage() {
       <p className="text-red-400">Session not found.</p>
     </div>
   )
-  if (isCompleted) return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex items-center justify-center">
-      <div className="text-center">
-        <p className="text-zinc-700 dark:text-slate-200 font-medium">Session completed.</p>
-        <p className="text-zinc-400 dark:text-slate-500 text-sm mt-1">This review has already been submitted.</p>
-        <button onClick={() => navigate('/')} className="mt-4 text-sm text-blue-400 hover:text-blue-500 transition-colors">← Back to sessions</button>
-      </div>
-    </div>
-  )
-
   if (submitted) return (
     <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex items-center justify-center">
       <div className="text-center">
@@ -647,6 +637,13 @@ export default function CodeReviewPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-zinc-950">
       <div className="max-w-3xl mx-auto py-10 px-4">
+
+        {isCompleted && (
+          <div className="mb-6 px-4 py-3 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg flex items-center justify-between">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">This session has been completed.</p>
+            <button onClick={() => navigate('/')} className="text-sm text-blue-400 hover:text-blue-500 transition-colors">← Back</button>
+          </div>
+        )}
 
         {/* Header */}
         <div className="mb-6">
@@ -708,36 +705,40 @@ export default function CodeReviewPage() {
           </div>
         )}
 
-        {/* Note */}
-        <div className="mb-6">
-          <textarea
-            className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-700 dark:text-slate-300 bg-white dark:bg-zinc-900 placeholder-zinc-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent resize-none"
-            rows={3}
-            placeholder="Add a note or modified command (optional)"
-            value={note}
-            onChange={e => setNote(e.target.value)}
-          />
-        </div>
+        {!isCompleted && (
+          <>
+            {/* Note */}
+            <div className="mb-6">
+              <textarea
+                className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-700 dark:text-slate-300 bg-white dark:bg-zinc-900 placeholder-zinc-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent resize-none"
+                rows={3}
+                placeholder="Add a note or modified command (optional)"
+                value={note}
+                onChange={e => setNote(e.target.value)}
+              />
+            </div>
 
-        {/* Buttons */}
-        <div className="flex gap-3">
-          <button
-            onClick={() => submit(true)}
-            disabled={submitting}
-            className={`flex-1 text-sm font-semibold py-2.5 rounded-lg transition-opacity ${submitting ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90'}`}
-            style={{ backgroundColor: 'var(--c-teal)', color: 'var(--c-bg)' }}
-          >
-            Approve
-          </button>
-          <button
-            onClick={() => submit(false)}
-            disabled={submitting}
-            className={`px-6 text-sm font-semibold py-2.5 rounded-lg transition-opacity ${submitting ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90'}`}
-            style={{ border: '1.5px solid var(--c-red)', color: 'var(--c-red)', backgroundColor: 'transparent' }}
-          >
-            Reject
-          </button>
-        </div>
+            {/* Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => submit(true)}
+                disabled={submitting}
+                className={`flex-1 text-sm font-semibold py-2.5 rounded-lg transition-opacity ${submitting ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90'}`}
+                style={{ backgroundColor: 'var(--c-teal)', color: 'var(--c-bg)' }}
+              >
+                Approve
+              </button>
+              <button
+                onClick={() => submit(false)}
+                disabled={submitting}
+                className={`px-6 text-sm font-semibold py-2.5 rounded-lg transition-opacity ${submitting ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90'}`}
+                style={{ border: '1.5px solid var(--c-red)', color: 'var(--c-red)', backgroundColor: 'transparent' }}
+              >
+                Reject
+              </button>
+            </div>
+          </>
+        )}
 
       </div>
     </div>

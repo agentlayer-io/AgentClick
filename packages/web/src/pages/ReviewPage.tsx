@@ -285,16 +285,6 @@ export default function ReviewPage() {
     </div>
   )
 
-  if (isCompleted) return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex items-center justify-center">
-      <div className="text-center">
-        <p className="text-zinc-700 dark:text-slate-200 font-medium">Session completed.</p>
-        <p className="text-zinc-400 dark:text-slate-500 text-sm mt-1">This review has already been submitted.</p>
-        <button onClick={() => navigate('/')} className="mt-4 text-sm text-blue-400 hover:text-blue-500 transition-colors">← Back to sessions</button>
-      </div>
-    </div>
-  )
-
   if (submitted) return (
     <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex items-center justify-center">
       <div className="text-center">
@@ -393,7 +383,14 @@ export default function ReviewPage() {
       })
 
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex">
+      <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex flex-col">
+        {isCompleted && (
+          <div className="px-4 py-3 bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between shrink-0">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">This session has been completed.</p>
+            <button onClick={() => navigate('/')} className="text-sm text-blue-400 hover:text-blue-500 transition-colors">← Back</button>
+          </div>
+        )}
+        <div className="flex flex-1 min-h-0">
         {/* Left Panel — Inbox List */}
         <div className="w-72 shrink-0 bg-white dark:bg-zinc-900 border-r border-gray-100 dark:border-zinc-800 overflow-y-auto">
           {visibleEmails.length === 0 ? (
@@ -609,65 +606,70 @@ export default function ReviewPage() {
                   </div>
                 )}
 
-                {/* User Intention */}
-                <div className="mb-3">
-                  <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">What do you want to do? (optional)</label>
-                  <input
-                    type="text"
-                    className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    placeholder="e.g. CC Hanwen, agree to the delay, keep it brief"
-                    value={userIntention}
-                    onChange={e => setUserIntention(e.target.value)}
-                  />
-                </div>
-
-                {/* Intent Suggestions */}
-                {intentSuggestions.length > 0 && (
-                  <div className="mb-6">
-                    <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-2">Intent Suggestions</label>
-                    <div className="flex flex-wrap gap-2">
-                      {intentSuggestions.map(suggestion => {
-                        const selected = !!selectedIntents[suggestion.id]
-                        return (
-                          <button
-                            key={suggestion.id}
-                            onClick={() => toggleIntent(suggestion.id)}
-                            className="text-sm font-medium px-3 py-1.5 rounded-full border transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-1 hover:opacity-85"
-                            style={selected
-                              ? { backgroundColor: 'var(--c-blue)', color: 'var(--c-bg)', borderColor: 'var(--c-blue)' }
-                              : { backgroundColor: 'var(--c-surface)', color: 'var(--c-navy)', borderColor: 'var(--c-accent)' }}
-                            aria-pressed={selected}
-                          >
-                            {suggestion.text}
-                          </button>
-                        )
-                      })}
+                        {!isCompleted && (
+                  <>
+                    {/* User Intention */}
+                    <div className="mb-3">
+                      <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">What do you want to do? (optional)</label>
+                      <input
+                        type="text"
+                        className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                        placeholder="e.g. CC Hanwen, agree to the delay, keep it brief"
+                        value={userIntention}
+                        onChange={e => setUserIntention(e.target.value)}
+                      />
                     </div>
-                  </div>
-                )}
 
-                {/* Footer buttons */}
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => submit(true)}
-                    disabled={submitting || waitingForRewrite}
-                    className={`flex-1 text-sm font-semibold py-2.5 rounded-lg transition-opacity ${submitting || waitingForRewrite ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90'}`}
-                    style={{ backgroundColor: 'var(--c-teal)', color: 'var(--c-bg)' }}
-                  >
-                    Confirm & Send
-                  </button>
-                  <button
-                    onClick={() => submit(false)}
-                    disabled={submitting || waitingForRewrite}
-                    className={`px-4 text-sm text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-zinc-700 rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors ${submitting || waitingForRewrite ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    Regenerate
-                  </button>
-                </div>
+                    {/* Intent Suggestions */}
+                    {intentSuggestions.length > 0 && (
+                      <div className="mb-6">
+                        <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-2">Intent Suggestions</label>
+                        <div className="flex flex-wrap gap-2">
+                          {intentSuggestions.map(suggestion => {
+                            const selected = !!selectedIntents[suggestion.id]
+                            return (
+                              <button
+                                key={suggestion.id}
+                                onClick={() => toggleIntent(suggestion.id)}
+                                className="text-sm font-medium px-3 py-1.5 rounded-full border transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-1 hover:opacity-85"
+                                style={selected
+                                  ? { backgroundColor: 'var(--c-blue)', color: 'var(--c-bg)', borderColor: 'var(--c-blue)' }
+                                  : { backgroundColor: 'var(--c-surface)', color: 'var(--c-navy)', borderColor: 'var(--c-accent)' }}
+                                aria-pressed={selected}
+                              >
+                                {suggestion.text}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Footer buttons */}
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => submit(true)}
+                        disabled={submitting || waitingForRewrite}
+                        className={`flex-1 text-sm font-semibold py-2.5 rounded-lg transition-opacity ${submitting || waitingForRewrite ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90'}`}
+                        style={{ backgroundColor: 'var(--c-teal)', color: 'var(--c-bg)' }}
+                      >
+                        Confirm & Send
+                      </button>
+                      <button
+                        onClick={() => submit(false)}
+                        disabled={submitting || waitingForRewrite}
+                        className={`px-4 text-sm text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-zinc-700 rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors ${submitting || waitingForRewrite ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        Regenerate
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
           </div>
+        </div>
         </div>
       </div>
     )
@@ -680,6 +682,13 @@ export default function ReviewPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-zinc-950">
       <div className="max-w-2xl mx-auto py-10 px-4">
+
+        {isCompleted && (
+          <div className="mb-6 px-4 py-3 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg flex items-center justify-between">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">This session has been completed.</p>
+            <button onClick={() => navigate('/')} className="text-sm text-blue-400 hover:text-blue-500 transition-colors">← Back</button>
+          </div>
+        )}
 
         {/* Header */}
         <div className="mb-6">
@@ -767,23 +776,24 @@ export default function ReviewPage() {
           </div>
         )}
 
-        {/* Footer buttons */}
-        <div className="flex gap-3">
-          <button
-            onClick={() => submit(true)}
-            disabled={submitting || waitingForRewrite}
-            className={`flex-1 bg-green-600 text-white text-sm font-medium py-2.5 rounded-lg hover:bg-green-700 transition-colors ${submitting || waitingForRewrite ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            Confirm & Send
-          </button>
-          <button
-            onClick={() => submit(false)}
-            disabled={submitting || waitingForRewrite}
-            className={`px-4 text-sm text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-zinc-700 rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors ${submitting || waitingForRewrite ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            Regenerate
-          </button>
-        </div>
+        {!isCompleted && (
+          <div className="flex gap-3">
+            <button
+              onClick={() => submit(true)}
+              disabled={submitting || waitingForRewrite}
+              className={`flex-1 bg-green-600 text-white text-sm font-medium py-2.5 rounded-lg hover:bg-green-700 transition-colors ${submitting || waitingForRewrite ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              Confirm & Send
+            </button>
+            <button
+              onClick={() => submit(false)}
+              disabled={submitting || waitingForRewrite}
+              className={`px-4 text-sm text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-zinc-700 rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors ${submitting || waitingForRewrite ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              Regenerate
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
