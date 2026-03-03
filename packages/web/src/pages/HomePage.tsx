@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 interface SessionItem {
   id: string
   type: string
-  status: 'pending' | 'completed'
+  status: 'pending' | 'rewriting' | 'completed'
   createdAt: number
   subject?: string
   to?: string
@@ -89,13 +89,14 @@ export default function HomePage() {
     fetch('/api/sessions')
       .then(r => r.json())
       .then((data: SessionItem[]) => {
-        const nextPending = data.filter(s => s.status === 'pending')
+        const nextPending = data.filter(s => s.status === 'pending' || s.status === 'rewriting')
         const nextIds = nextPending.map(s => s.id).join(',')
         // Only update state if pending list actually changed
         if (initial || nextIds !== pendingIdsRef.current) {
           pendingIdsRef.current = nextIds
           setPending(nextPending)
           setCompletedCount(data.filter(s => s.status === 'completed').length)
+          document.title = nextPending.length > 0 ? `(${nextPending.length}) AgentClick` : 'AgentClick'
         }
         if (initial) setLoading(false)
       })
@@ -198,6 +199,9 @@ export default function HomePage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0 ml-4">
+                    {s.status === 'rewriting' && (
+                      <span className="text-xs px-2 py-0.5 rounded font-medium bg-amber-50 dark:bg-amber-950 text-amber-600 dark:text-amber-400">Rewriting</span>
+                    )}
                     {riskBadge(risk)}
                     <span className="text-xs text-zinc-400 dark:text-slate-500">{formatTime(s.createdAt)}</span>
                   </div>
