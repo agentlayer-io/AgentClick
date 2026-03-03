@@ -120,7 +120,8 @@ function RiskBadge({ risk }: { risk: RiskLevel }) {
 // ─── DAG layout engine (same as TrajectoryPage) ──────────────────────────────
 
 const DEFAULT_NODE_W = 420
-const DEFAULT_NODE_H = 280
+const MIN_NODE_H = 220
+const FOLDED_NODE_H = 120
 const MIN_NODE_W = 320
 const MAX_NODE_W = 620
 const GAP_X = 36
@@ -270,6 +271,48 @@ function renderInlineCode(text: string): ReactNode[] {
   })
 }
 
+function estimateLines(text: string, charsPerLine: number): number {
+  if (!text) return 0
+  const hardLines = text.split('\n')
+  let total = 0
+  for (const line of hardLines) {
+    total += Math.max(1, Math.ceil(line.length / Math.max(8, charsPerLine)))
+  }
+  return total
+}
+
+function estimateNodeHeight(
+  step: PlanStep,
+  nodeW: number,
+  isSelected: boolean,
+  isFolded: boolean,
+  addedConstraintCount: number
+): number {
+  if (isFolded) return FOLDED_NODE_H
+  const charsPerLine = Math.max(28, Math.floor((nodeW - 56) / 7.2))
+
+  let lines = 0
+  lines += 2 // header + id
+  lines += estimateLines(step.label, charsPerLine)
+  if (step.type === 'terminal') lines += 1
+  if (step.description) lines += estimateLines(step.description, charsPerLine)
+  if (step.files?.length) {
+    lines += 1 // label
+    for (const f of step.files) lines += estimateLines(f, charsPerLine)
+  }
+  if (step.constraints?.length) {
+    lines += 1
+    for (const c of step.constraints) lines += estimateLines(`- ${c}`, charsPerLine)
+  }
+  if (isSelected) {
+    lines += 2 // guidance label + input row
+    lines += step.constraints?.length ? Math.ceil(step.constraints.length / 2) : 0
+    lines += addedConstraintCount ? Math.ceil(addedConstraintCount / 2) : 0
+  }
+
+  return Math.max(MIN_NODE_H, Math.min(900, 24 + lines * 18))
+}
+
 // ─── DagEdgeLayer ────────────────────────────────────────────────────────────
 
 function DagEdgeLayer({
@@ -278,14 +321,14 @@ function DagEdgeLayer({
   connectedSet,
   hoveredNodeId,
   nodeW,
-  nodeH,
+  nodeHeights,
 }: {
   edges: LayoutEdge[]
   nodePositions: Map<string, { x: number; y: number }>
   connectedSet: Set<string>
   hoveredNodeId: string | null
   nodeW: number
-  nodeH: number
+  nodeHeights: Map<string, number>
 }) {
   return (
     <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none' }}>
@@ -296,7 +339,7 @@ function DagEdgeLayer({
         const fromCx = from.x + nodeW / 2
         const toCx = to.x + nodeW / 2
         const x1 = Math.max(from.x, Math.min(from.x + nodeW, toCx))
-        const y1 = from.y + nodeH
+        const y1 = from.y + (nodeHeights.get(e.fromId) ?? MIN_NODE_H)
         const x2 = Math.max(to.x, Math.min(to.x + nodeW, fromCx))
         const y2 = to.y
         const isHighlighted = hoveredNodeId ? connectedSet.has(e.fromId) && connectedSet.has(e.toId) : false
@@ -337,6 +380,8 @@ function PlanDagNode({
   stepConstraints,
   onAddConstraint,
   onRemoveConstraint,
+  isFolded,
+  onToggleFold,
   onMouseEnter,
   onMouseLeave,
   onClick,
@@ -358,6 +403,8 @@ function PlanDagNode({
   stepConstraints: string[]
   onAddConstraint: (id: string, constraint: string) => void
   onRemoveConstraint: (id: string, index: number) => void
+  isFolded: boolean
+  onToggleFold: (id: string) => void
   onMouseEnter: () => void
   onMouseLeave: () => void
   onClick: () => void
@@ -410,8 +457,7 @@ function PlanDagNode({
           padding: 'inherit',
           margin: '-0.5rem -0.75rem',
           borderStyle: isRemoved ? 'dashed' : isInserted ? 'dashed' : undefined,
-          height: nodeH,
-          overflow: 'hidden',
+          minHeight: nodeH,
         }}
       >
         {/* Header row */}
@@ -440,6 +486,12 @@ function PlanDagNode({
               &#x25B8;
             </span>
           )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleFold(node.stepId) }}
+            className="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 dark:border-zinc-700 text-zinc-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-zinc-800"
+          >
+            {isFolded ? 'Expand' : 'Fold'}
+          </button>
         </div>
 
         <p className="text-[10px] font-mono text-zinc-400 dark:text-slate-500 mb-1">ID: {node.stepId}</p>
@@ -454,13 +506,13 @@ function PlanDagNode({
           </p>
         )}
 
-        {step.description && (
+        {!isFolded && step.description && (
           <p className={`text-xs mt-2 leading-relaxed whitespace-pre-wrap break-words ${textClass}`}>
             {renderInlineCode(step.description)}
           </p>
         )}
 
-        {step.files && step.files.length > 0 && (
+        {!isFolded && step.files && step.files.length > 0 && (
           <div className="mt-2">
             <p className="text-[10px] font-medium text-zinc-400 dark:text-slate-500 uppercase">Files</p>
             <div className="mt-1 space-y-1">
@@ -471,7 +523,7 @@ function PlanDagNode({
           </div>
         )}
 
-        {step.constraints && step.constraints.length > 0 && !isSelected && (
+        {!isFolded && step.constraints && step.constraints.length > 0 && !isSelected && (
           <div className="mt-2">
             <p className="text-[10px] font-medium text-zinc-400 dark:text-slate-500 uppercase">Constraints</p>
             <p className={`text-xs mt-1 whitespace-pre-wrap break-words ${textClass}`}>
@@ -480,7 +532,7 @@ function PlanDagNode({
           </div>
         )}
 
-        {isSelected && (
+        {!isFolded && isSelected && (
           <div className="mt-3 pt-2 border-t border-gray-200 dark:border-zinc-700">
             <p className="text-[10px] font-medium text-zinc-500 dark:text-slate-400 uppercase mb-1">
               Guidance / Constraint
@@ -928,6 +980,7 @@ function PlanDagCanvas({
 }) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [foldedIds, setFoldedIds] = useState<Set<string>>(new Set())
   const viewportRef = useRef<HTMLDivElement>(null)
   const [viewportW, setViewportW] = useState(0)
 
@@ -949,18 +1002,49 @@ function PlanDagCanvas({
     return Math.max(MIN_NODE_W, Math.min(MAX_NODE_W, perCol))
   }, [viewportW, layout.cols])
 
-  const nodeH = DEFAULT_NODE_H
+  const nodeHeights = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const n of layout.nodes) {
+      map.set(
+        n.stepId,
+        estimateNodeHeight(
+          n.step,
+          nodeW,
+          selectedNodeId === n.stepId,
+          foldedIds.has(n.stepId),
+          (constraints.get(n.stepId) ?? []).length
+        )
+      )
+    }
+    return map
+  }, [layout.nodes, nodeW, selectedNodeId, foldedIds, constraints])
+
+  const rowOffsets = useMemo(() => {
+    const maxByRow = new Map<number, number>()
+    for (const n of layout.nodes) {
+      const h = nodeHeights.get(n.stepId) ?? MIN_NODE_H
+      const prev = maxByRow.get(n.row) ?? 0
+      if (h > prev) maxByRow.set(n.row, h)
+    }
+    const offsets = new Map<number, number>()
+    let y = 0
+    for (let r = 0; r < layout.rows; r++) {
+      offsets.set(r, y)
+      y += (maxByRow.get(r) ?? MIN_NODE_H) + GAP_Y
+    }
+    return { offsets, maxByRow, totalHeight: Math.max(0, y - GAP_Y) }
+  }, [layout.nodes, layout.rows, nodeHeights])
 
   const nodePositions = useMemo(() => {
     const positions = new Map<string, { x: number; y: number }>()
     for (const n of layout.nodes) {
       positions.set(n.stepId, {
         x: n.col * (nodeW + GAP_X),
-        y: n.row * (nodeH + GAP_Y),
+        y: rowOffsets.offsets.get(n.row) ?? 0,
       })
     }
     return positions
-  }, [layout, nodeW, nodeH])
+  }, [layout.nodes, nodeW, rowOffsets.offsets])
 
   const connectedSet = useMemo(() => {
     if (!hoveredNodeId) return new Set<string>()
@@ -968,7 +1052,7 @@ function PlanDagCanvas({
   }, [hoveredNodeId, layout.edges])
 
   const canvasW = layout.cols * (nodeW + GAP_X) - GAP_X
-  const canvasH = layout.rows * (nodeH + GAP_Y) - GAP_Y + nodeH
+  const canvasH = rowOffsets.totalHeight
 
   const selectedStep = selectedNodeId ? stepMap.get(selectedNodeId) : null
 
@@ -983,12 +1067,12 @@ function PlanDagCanvas({
         positions.push({
           afterId: node.stepId,
           x: pos.x + nodeW / 2 - 12,
-          y: pos.y + nodeH + (GAP_Y / 2) - 12,
+          y: pos.y + (nodeHeights.get(node.stepId) ?? MIN_NODE_H) + (GAP_Y / 2) - 12,
         })
       }
     }
     return positions
-  }, [layout.nodes, nodePositions, nodeW, nodeH])
+  }, [layout.nodes, nodePositions, nodeW, nodeHeights])
 
   const handleNodeClick = useCallback((stepId: string, hasChildren: boolean) => {
     if (hasChildren) {
@@ -996,6 +1080,15 @@ function PlanDagCanvas({
     }
     setSelectedNodeId(prev => prev === stepId ? null : stepId)
   }, [onToggleCollapse])
+
+  const toggleFold = useCallback((stepId: string) => {
+    setFoldedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(stepId)) next.delete(stepId)
+      else next.add(stepId)
+      return next
+    })
+  }, [])
 
   const insertedIds = new Set(insertions.map(ins => ins.step.id))
 
@@ -1014,7 +1107,7 @@ function PlanDagCanvas({
               connectedSet={connectedSet}
               hoveredNodeId={hoveredNodeId}
               nodeW={nodeW}
-              nodeH={nodeH}
+              nodeHeights={nodeHeights}
             />
 
             {layout.nodes.map(n => {
@@ -1028,7 +1121,7 @@ function PlanDagCanvas({
                   x={pos.x}
                   y={pos.y}
                   nodeW={nodeW}
-                  nodeH={nodeH}
+                  nodeH={nodeHeights.get(n.stepId) ?? MIN_NODE_H}
                   isHovered={hoveredNodeId === n.stepId}
                   isSelected={selectedNodeId === n.stepId}
                   isDimmed={!!hoveredNodeId && !connectedSet.has(n.stepId)}
@@ -1041,6 +1134,8 @@ function PlanDagCanvas({
                   stepConstraints={constraints.get(n.stepId) ?? []}
                   onAddConstraint={onAddConstraint}
                   onRemoveConstraint={onRemoveConstraint}
+                  isFolded={foldedIds.has(n.stepId)}
+                  onToggleFold={toggleFold}
                   onMouseEnter={() => setHoveredNodeId(n.stepId)}
                   onMouseLeave={() => setHoveredNodeId(null)}
                   onClick={() => handleNodeClick(n.stepId, hasChildren)}
