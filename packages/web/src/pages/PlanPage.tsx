@@ -119,8 +119,10 @@ function RiskBadge({ risk }: { risk: RiskLevel }) {
 
 // ─── DAG layout engine (same as TrajectoryPage) ──────────────────────────────
 
-const NODE_W = 360
-const NODE_H = 220
+const DEFAULT_NODE_W = 420
+const DEFAULT_NODE_H = 280
+const MIN_NODE_W = 320
+const MAX_NODE_W = 620
 const GAP_X = 36
 const GAP_Y = 34
 
@@ -251,6 +253,23 @@ function collectStepIds(steps: PlanStep[]): string[] {
   return ids
 }
 
+function renderInlineCode(text: string): ReactNode[] {
+  const parts = text.split(/(`[^`]+`)/g)
+  return parts.map((part, i) => {
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return (
+        <code
+          key={`code-${i}`}
+          className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-slate-200 font-mono text-[11px]"
+        >
+          {part.slice(1, -1)}
+        </code>
+      )
+    }
+    return <span key={`txt-${i}`}>{part}</span>
+  })
+}
+
 // ─── DagEdgeLayer ────────────────────────────────────────────────────────────
 
 function DagEdgeLayer({
@@ -258,11 +277,15 @@ function DagEdgeLayer({
   nodePositions,
   connectedSet,
   hoveredNodeId,
+  nodeW,
+  nodeH,
 }: {
   edges: LayoutEdge[]
   nodePositions: Map<string, { x: number; y: number }>
   connectedSet: Set<string>
   hoveredNodeId: string | null
+  nodeW: number
+  nodeH: number
 }) {
   return (
     <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none' }}>
@@ -270,11 +293,11 @@ function DagEdgeLayer({
         const from = nodePositions.get(e.fromId)
         const to = nodePositions.get(e.toId)
         if (!from || !to) return null
-        const fromCx = from.x + NODE_W / 2
-        const toCx = to.x + NODE_W / 2
-        const x1 = Math.max(from.x, Math.min(from.x + NODE_W, toCx))
-        const y1 = from.y + NODE_H
-        const x2 = Math.max(to.x, Math.min(to.x + NODE_W, fromCx))
+        const fromCx = from.x + nodeW / 2
+        const toCx = to.x + nodeW / 2
+        const x1 = Math.max(from.x, Math.min(from.x + nodeW, toCx))
+        const y1 = from.y + nodeH
+        const x2 = Math.max(to.x, Math.min(to.x + nodeW, fromCx))
         const y2 = to.y
         const isHighlighted = hoveredNodeId ? connectedSet.has(e.fromId) && connectedSet.has(e.toId) : false
         const isDimmed = hoveredNodeId && !isHighlighted
@@ -300,6 +323,8 @@ function PlanDagNode({
   node,
   x,
   y,
+  nodeW,
+  nodeH,
   isHovered,
   isSelected,
   isDimmed,
@@ -316,6 +341,8 @@ function PlanDagNode({
   node: LayoutNode
   x: number
   y: number
+  nodeW: number
+  nodeH: number
   isHovered: boolean
   isSelected: boolean
   isDimmed: boolean
@@ -342,8 +369,8 @@ function PlanDagNode({
         position: 'absolute',
         left: x,
         top: y,
-        width: NODE_W,
-        minHeight: NODE_H,
+        width: nodeW,
+        minHeight: nodeH,
         transform: isHovered ? 'scale(1.015)' : 'scale(1)',
         transition: 'transform 0.15s ease, box-shadow 0.15s ease, opacity 0.25s ease',
         opacity: isDimmed || isSkipped ? 0.4 : isRemoved ? 0.5 : 1,
@@ -375,8 +402,8 @@ function PlanDagNode({
           padding: 'inherit',
           margin: '-0.5rem -0.75rem',
           borderStyle: isRemoved ? 'dashed' : isInserted ? 'dashed' : undefined,
-          height: NODE_H,
-          overflowY: 'auto',
+          height: nodeH,
+          overflow: 'hidden',
         }}
       >
         {/* Header row */}
@@ -409,22 +436,30 @@ function PlanDagNode({
 
         <p className="text-[10px] font-mono text-zinc-400 dark:text-slate-500 mb-1">ID: {node.stepId}</p>
 
-        <p className={`text-sm font-medium leading-snug whitespace-pre-wrap break-words ${textClass}`}>
-          {step.label}
-        </p>
+        {step.type === 'terminal' ? (
+          <pre className={`text-xs mt-1 p-2 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 font-mono whitespace-pre-wrap break-all ${textClass}`}>
+            <code>{step.label}</code>
+          </pre>
+        ) : (
+          <p className={`text-sm font-medium leading-snug whitespace-pre-wrap break-words ${textClass}`}>
+            {renderInlineCode(step.label)}
+          </p>
+        )}
 
         {step.description && (
           <p className={`text-xs mt-2 leading-relaxed whitespace-pre-wrap break-words ${textClass}`}>
-            {step.description}
+            {renderInlineCode(step.description)}
           </p>
         )}
 
         {step.files && step.files.length > 0 && (
           <div className="mt-2">
             <p className="text-[10px] font-medium text-zinc-400 dark:text-slate-500 uppercase">Files</p>
-            <p className={`text-xs mt-1 font-mono whitespace-pre-wrap break-all ${textClass}`}>
-              {step.files.join('\n')}
-            </p>
+            <div className="mt-1 space-y-1">
+              {step.files.map(file => (
+                <p key={file} className={`text-xs font-mono whitespace-pre-wrap break-all ${textClass}`}>{file}</p>
+              ))}
+            </div>
           </div>
         )}
 
@@ -831,25 +866,47 @@ function PlanDagCanvas({
 }) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const [viewportW, setViewportW] = useState(0)
+
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+    const update = () => setViewportW(el.clientWidth)
+    update()
+    const obs = new ResizeObserver(() => update())
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
+
+  const nodeW = useMemo(() => {
+    if (viewportW <= 0) return DEFAULT_NODE_W
+    const cols = Math.max(1, layout.cols)
+    const usable = viewportW - 48 - (cols - 1) * GAP_X
+    const perCol = Math.floor(usable / cols)
+    return Math.max(MIN_NODE_W, Math.min(MAX_NODE_W, perCol))
+  }, [viewportW, layout.cols])
+
+  const nodeH = DEFAULT_NODE_H
 
   const nodePositions = useMemo(() => {
     const positions = new Map<string, { x: number; y: number }>()
     for (const n of layout.nodes) {
       positions.set(n.stepId, {
-        x: n.col * (NODE_W + GAP_X),
-        y: n.row * (NODE_H + GAP_Y),
+        x: n.col * (nodeW + GAP_X),
+        y: n.row * (nodeH + GAP_Y),
       })
     }
     return positions
-  }, [layout])
+  }, [layout, nodeW, nodeH])
 
   const connectedSet = useMemo(() => {
     if (!hoveredNodeId) return new Set<string>()
     return computeConnectedSet(hoveredNodeId, layout.edges)
   }, [hoveredNodeId, layout.edges])
 
-  const canvasW = layout.cols * (NODE_W + GAP_X) - GAP_X
-  const canvasH = layout.rows * (NODE_H + GAP_Y) - GAP_Y + NODE_H
+  const canvasW = layout.cols * (nodeW + GAP_X) - GAP_X
+  const canvasH = layout.rows * (nodeH + GAP_Y) - GAP_Y + nodeH
 
   const selectedStep = selectedNodeId ? stepMap.get(selectedNodeId) : null
 
@@ -863,13 +920,13 @@ function PlanDagCanvas({
       if (pos) {
         positions.push({
           afterId: node.stepId,
-          x: pos.x + NODE_W / 2 - 12,
-          y: pos.y + NODE_H + (GAP_Y / 2) - 12,
+          x: pos.x + nodeW / 2 - 12,
+          y: pos.y + nodeH + (GAP_Y / 2) - 12,
         })
       }
     }
     return positions
-  }, [layout.nodes, nodePositions])
+  }, [layout.nodes, nodePositions, nodeW, nodeH])
 
   const handleNodeClick = useCallback((stepId: string, hasChildren: boolean) => {
     if (hasChildren) {
@@ -883,12 +940,20 @@ function PlanDagCanvas({
   return (
     <div>
       <div
+        ref={viewportRef}
         className="overflow-x-auto rounded-lg border border-gray-100 dark:border-zinc-800"
         style={{ backgroundColor: 'var(--c-dag-bg)' }}
       >
         <div style={{ position: 'relative', width: canvasW + 48, height: canvasH + 48, minWidth: '100%' }}>
           <div style={{ position: 'absolute', left: '50%', top: 24, transform: `translateX(-${canvasW / 2}px)`, width: canvasW, height: canvasH }}>
-            <DagEdgeLayer edges={layout.edges} nodePositions={nodePositions} connectedSet={connectedSet} hoveredNodeId={hoveredNodeId} />
+            <DagEdgeLayer
+              edges={layout.edges}
+              nodePositions={nodePositions}
+              connectedSet={connectedSet}
+              hoveredNodeId={hoveredNodeId}
+              nodeW={nodeW}
+              nodeH={nodeH}
+            />
 
             {layout.nodes.map(n => {
               const pos = nodePositions.get(n.stepId)!
@@ -900,6 +965,8 @@ function PlanDagCanvas({
                   node={n}
                   x={pos.x}
                   y={pos.y}
+                  nodeW={nodeW}
+                  nodeH={nodeH}
                   isHovered={hoveredNodeId === n.stepId}
                   isSelected={selectedNodeId === n.stepId}
                   isDimmed={!!hoveredNodeId && !connectedSet.has(n.stepId)}
