@@ -119,10 +119,10 @@ function RiskBadge({ risk }: { risk: RiskLevel }) {
 
 // ─── DAG layout engine (same as TrajectoryPage) ──────────────────────────────
 
-const NODE_W = 200
-const NODE_H = 56
-const GAP_X = 32
-const GAP_Y = 28
+const NODE_W = 360
+const NODE_H = 220
+const GAP_X = 36
+const GAP_Y = 34
 
 interface LayoutNode {
   stepId: string
@@ -331,6 +331,7 @@ function PlanDagNode({
 }) {
   const step = node.step
   const riskColor = step.risk ? `var(--c-risk-${step.risk})` : undefined
+  const textClass = isRemoved ? 'line-through text-zinc-400 dark:text-slate-500' : 'text-zinc-700 dark:text-slate-300'
 
   return (
     <div
@@ -343,7 +344,7 @@ function PlanDagNode({
         top: y,
         width: NODE_W,
         minHeight: NODE_H,
-        transform: isHovered ? 'scale(1.03)' : 'scale(1)',
+        transform: isHovered ? 'scale(1.015)' : 'scale(1)',
         transition: 'transform 0.15s ease, box-shadow 0.15s ease, opacity 0.25s ease',
         opacity: isDimmed || isSkipped ? 0.4 : isRemoved ? 0.5 : 1,
         zIndex: isHovered ? 10 : 1,
@@ -374,10 +375,12 @@ function PlanDagNode({
           padding: 'inherit',
           margin: '-0.5rem -0.75rem',
           borderStyle: isRemoved ? 'dashed' : isInserted ? 'dashed' : undefined,
+          height: NODE_H,
+          overflowY: 'auto',
         }}
       >
         {/* Header row */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 mb-2">
           <PlanTypeBadge type={step.type} />
           <span className="flex-1" />
           {isModified && (
@@ -404,13 +407,35 @@ function PlanDagNode({
           )}
         </div>
 
-        {/* Label */}
-        <p
-          className={`text-xs mt-1 truncate ${isRemoved ? 'line-through text-zinc-400 dark:text-slate-500' : 'text-zinc-700 dark:text-slate-300'}`}
-          title={step.label}
-        >
+        <p className="text-[10px] font-mono text-zinc-400 dark:text-slate-500 mb-1">ID: {node.stepId}</p>
+
+        <p className={`text-sm font-medium leading-snug whitespace-pre-wrap break-words ${textClass}`}>
           {step.label}
         </p>
+
+        {step.description && (
+          <p className={`text-xs mt-2 leading-relaxed whitespace-pre-wrap break-words ${textClass}`}>
+            {step.description}
+          </p>
+        )}
+
+        {step.files && step.files.length > 0 && (
+          <div className="mt-2">
+            <p className="text-[10px] font-medium text-zinc-400 dark:text-slate-500 uppercase">Files</p>
+            <p className={`text-xs mt-1 font-mono whitespace-pre-wrap break-all ${textClass}`}>
+              {step.files.join('\n')}
+            </p>
+          </div>
+        )}
+
+        {step.constraints && step.constraints.length > 0 && (
+          <div className="mt-2">
+            <p className="text-[10px] font-medium text-zinc-400 dark:text-slate-500 uppercase">Constraints</p>
+            <p className={`text-xs mt-1 whitespace-pre-wrap break-words ${textClass}`}>
+              {step.constraints.map(c => `- ${c}`).join('\n')}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )
