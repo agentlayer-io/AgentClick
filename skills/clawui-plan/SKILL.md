@@ -169,6 +169,7 @@ Rules:
 - Do not create a second review session for the same plan unless the first one is abandoned.
 - Treat `/wait` as the single source of truth for approval state.
 - AgentClick does not auto-push approval into your local agent process; the agent must keep an active `/wait` poll to receive the decision.
+- On submission, AgentClick opens both the plan review page and the default home page (`/`) for quick function/README reference.
 
 ## Result Schema
 

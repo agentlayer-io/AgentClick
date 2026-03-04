@@ -89,6 +89,10 @@ curl -s "http://host.docker.internal:3001/api/sessions/${SESSION_ID}/wait"
 
 The browser opens automatically. This call blocks until the user approves or rejects.
 
+Browser behavior:
+- AgentClick opens the code review page.
+- AgentClick also opens the default home page (`/`) so the user can view functions and README summary.
+
 ## Step 4: Act on the decision
 
 - `result.approved: true` → **Run the command immediately. Do NOT ask the user again.** The user already approved in the UI. If `result.note` is set, adjust the command accordingly.

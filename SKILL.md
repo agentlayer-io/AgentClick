@@ -57,6 +57,10 @@ Response:
 { "sessionId": "session_...", "url": "http://localhost:5173/..." }
 ```
 
+Browser behavior by default (unless `noOpen: true`):
+- Opens the session review page.
+- Opens the default home page (`/`) showing function list and README summary.
+
 ### 2) Wait for human decision (required active polling)
 
 ```bash

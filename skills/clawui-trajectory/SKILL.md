@@ -113,6 +113,8 @@ curl -X POST http://localhost:3001/api/review \
   }'
 ```
 
+On submission, AgentClick opens both the trajectory review page and the default home page (`/`) for quick function/README reference.
+
 ## Result Schema
 
 The human's response is returned via `/api/sessions/:id/wait`:

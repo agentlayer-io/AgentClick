@@ -2,7 +2,7 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import open from 'open'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { learnFromDeletions, learnFromTrajectoryRevisions, getLearnedPreferences, clearPreferences, deletePreference } from './preference.js'
@@ -15,8 +15,10 @@ const OPENCLAW_WEBHOOK = process.env.OPENCLAW_WEBHOOK || 'http://localhost:18789
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 const WEB_DIST_DIR = join(__dirname, '../../web/dist')
+const README_PATH = join(__dirname, '../../../README.md')
 const SHOULD_SERVE_BUILT_WEB = existsSync(WEB_DIST_DIR) && (__filename.endsWith('/dist/index.js') || process.env.NODE_ENV === 'production')
 const WEB_ORIGIN = process.env.WEB_ORIGIN || (SHOULD_SERVE_BUILT_WEB ? `http://localhost:${PORT}` : 'http://localhost:5173')
+const DEFAULT_HOME_POPUP = process.env.AGENTCLICK_OPEN_HOME !== 'false'
 
 app.use(cors())
 app.use(express.json())
@@ -90,6 +92,28 @@ app.get('/api/ports-status', async (_req, res) => {
   })
 })
 
+app.get('/api/home-info', (_req, res) => {
+  const functions = [
+    { type: 'action_approval', route: '/approval/:id' },
+    { type: 'code_review', route: '/code-review/:id' },
+    { type: 'email_review', route: '/review/:id' },
+    { type: 'plan_review', route: '/plan/:id' },
+    { type: 'trajectory_review', route: '/trajectory/:id' },
+    { type: 'form_review', route: '/form-review/:id' },
+    { type: 'selection_review', route: '/selection/:id' },
+  ]
+  let readmeSummary = 'README.md not found.'
+  if (existsSync(README_PATH)) {
+    const readme = readFileSync(README_PATH, 'utf-8')
+    readmeSummary = readme.split('\n').slice(0, 28).join('\n')
+  }
+  res.json({
+    repo: 'https://github.com/agentlayer-io/AgentClick',
+    functions,
+    readmeSummary,
+  })
+})
+
 // OpenClaw calls this when a review is needed
 app.post('/api/review', async (req, res) => {
   const { type, sessionKey, payload, noOpen } = req.body
@@ -128,6 +152,9 @@ app.post('/api/review', async (req, res) => {
     console.log(`[agentclick] Opening browser: ${url}`)
     try {
       await open(url)
+      if (DEFAULT_HOME_POPUP) {
+        await open(`${WEB_ORIGIN}/`)
+      }
     } catch (err) {
       console.warn('[agentclick] Failed to open browser:', err)
     }

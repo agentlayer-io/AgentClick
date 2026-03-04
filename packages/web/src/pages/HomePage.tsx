@@ -13,6 +13,12 @@ interface SessionItem {
   title?: string
 }
 
+interface HomeInfo {
+  repo: string
+  functions: Array<{ type: string; route: string }>
+  readmeSummary: string
+}
+
 const TYPE_LABELS: Record<string, string> = {
   email_review:      'Email',
   code_review:       'Code',
@@ -82,6 +88,7 @@ export default function HomePage() {
   const [completedCount, setCompletedCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [prefCount, setPrefCount] = useState<number | null>(null)
+  const [homeInfo, setHomeInfo] = useState<HomeInfo | null>(null)
 
   const pendingIdsRef = useRef<string>('')
 
@@ -109,6 +116,11 @@ export default function HomePage() {
     fetch('/api/preferences')
       .then(r => r.json())
       .then(data => setPrefCount((data.preferences ?? []).length))
+      .catch(() => {})
+
+    fetch('/api/home-info')
+      .then(r => r.json())
+      .then((data: HomeInfo) => setHomeInfo(data))
       .catch(() => {})
 
     const INTERVAL = 5000
@@ -168,6 +180,31 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+
+        {homeInfo && (
+          <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg">
+            <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider mb-2">Default Front Page</p>
+            <p className="text-sm font-medium text-zinc-800 dark:text-slate-200 mb-2">Functions</p>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {homeInfo.functions.map(fn => (
+                <span key={fn.type} className="text-xs px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-slate-400 font-mono">
+                  {fn.type}
+                </span>
+              ))}
+            </div>
+            <a
+              href={homeInfo.repo}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 underline"
+            >
+              Open Repository README
+            </a>
+            <pre className="mt-3 text-[11px] leading-relaxed whitespace-pre-wrap break-words text-zinc-600 dark:text-slate-400 bg-zinc-50 dark:bg-zinc-950 border border-gray-100 dark:border-zinc-800 rounded p-3 max-h-56 overflow-y-auto">
+              {homeInfo.readmeSummary}
+            </pre>
+          </div>
+        )}
 
         {loading && (
           <p className="text-sm text-zinc-400 dark:text-slate-500">Loading...</p>
