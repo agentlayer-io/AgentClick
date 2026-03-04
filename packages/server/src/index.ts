@@ -18,7 +18,6 @@ const WEB_DIST_DIR = join(__dirname, '../../web/dist')
 const README_PATH = join(__dirname, '../../../README.md')
 const SHOULD_SERVE_BUILT_WEB = existsSync(WEB_DIST_DIR) && (__filename.endsWith('/dist/index.js') || process.env.NODE_ENV === 'production')
 const WEB_ORIGIN = process.env.WEB_ORIGIN || (SHOULD_SERVE_BUILT_WEB ? `http://localhost:${PORT}` : 'http://localhost:5173')
-const DEFAULT_HOME_POPUP = process.env.AGENTCLICK_OPEN_HOME !== 'false'
 
 app.use(cors())
 app.use(express.json())
@@ -116,7 +115,7 @@ app.get('/api/home-info', (_req, res) => {
 
 // OpenClaw calls this when a review is needed
 app.post('/api/review', async (req, res) => {
-  const { type, sessionKey, payload, noOpen } = req.body
+  const { type, sessionKey, payload, noOpen, openHome } = req.body
 
   if (!sessionKey) {
     console.warn('[agentclick] Warning: sessionKey missing — callback will be skipped')
@@ -152,7 +151,7 @@ app.post('/api/review', async (req, res) => {
     console.log(`[agentclick] Opening browser: ${url}`)
     try {
       await open(url)
-      if (DEFAULT_HOME_POPUP) {
+      if (openHome) {
         await open(`${WEB_ORIGIN}/`)
       }
     } catch (err) {

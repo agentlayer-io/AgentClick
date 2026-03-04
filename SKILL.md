@@ -59,7 +59,9 @@ Response:
 
 Browser behavior by default (unless `noOpen: true`):
 - Opens the session review page.
-- Opens the default home page (`/`) showing function list and README summary.
+
+Optional:
+- Set `openHome: true` in `POST /api/review` to also open the default home page (`/`).
 
 ### 2) Wait for human decision (required active polling)
 

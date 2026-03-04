@@ -91,7 +91,6 @@ The browser opens automatically. This call blocks until the user approves or rej
 
 Browser behavior:
 - AgentClick opens the code review page.
-- AgentClick also opens the default home page (`/`) so the user can view functions and README summary.
 
 ## Step 4: Act on the decision
 

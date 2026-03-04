@@ -28,9 +28,7 @@ For email review requests handled by this skill:
 - Do NOT ask the user to review the draft directly in chat first
 
 Always submit to AgentClick via `POST /api/review` and let the user review in the AgentClick UI.
-Submission opens both:
-- the email review page for the active session
-- the default home page (`/`) for functions/README overview
+Submission opens the email review page for the active session.
 
 ---
 
