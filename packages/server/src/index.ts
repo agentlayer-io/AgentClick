@@ -10,7 +10,6 @@ import { createSession, getSession, listSessions, completeSession, setSessionRew
 import {
   buildMemoryCatalog,
   buildMemoryReviewPayload,
-  deleteMemoryFile,
   includeMemoryFileInContext,
   readMemoryFileContent,
   removeMemoryFileFromContext,
@@ -274,15 +273,6 @@ app.post('/api/memory/exclude', (req, res) => {
   if (!filePath) return res.status(400).json({ error: 'Missing path in request body' })
   const result = removeMemoryFileFromContext({ projectRoot, filePath })
   if (!result.ok) return res.status(404).json({ error: 'File not found in memory catalog' })
-  res.json(result)
-})
-
-app.delete('/api/memory/file', (req, res) => {
-  const projectRoot = join(__dirname, '../../..')
-  const filePath = typeof req.query.path === 'string' ? req.query.path : ''
-  if (!filePath) return res.status(400).json({ error: 'Missing path query' })
-  const result = deleteMemoryFile({ projectRoot, filePath })
-  if (!result.ok) return res.status(400).json({ error: result.reason || 'Failed to delete file' })
   res.json(result)
 })
 

@@ -101,6 +101,7 @@ export default function MemoryManagementPage() {
   const [fileLoading, setFileLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState('')
+  const [agentDeleteRequest, setAgentDeleteRequest] = useState('')
 
   const loadCatalog = async () => {
     setLoading(true)
@@ -129,6 +130,7 @@ export default function MemoryManagementPage() {
 
   const openFile = async (file: MemoryFile) => {
     setSelectedPath(file.path)
+    setAgentDeleteRequest('')
     setFileLoading(true)
     try {
       const response = await fetch(`/api/memory/file?path=${encodeURIComponent(file.path)}`)
@@ -175,23 +177,25 @@ export default function MemoryManagementPage() {
     }
   }
 
-  const handleDelete = async (targetPath: string) => {
+  const handleDeleteRequest = (targetPath: string) => {
     const confirmed = window.confirm('Delete this memory file permanently?')
     if (!confirmed) return
-    setActionLoading(true)
+    const requestText = [
+      'Please delete this memory file from disk:',
+      targetPath,
+      '',
+      'Reason: user requested file deletion from Memory Management UI.',
+    ].join('\n')
+    setAgentDeleteRequest(requestText)
+    setError('')
+  }
+
+  const copyDeleteRequest = async () => {
+    if (!agentDeleteRequest) return
     try {
-      const response = await fetch(`/api/memory/file?path=${encodeURIComponent(targetPath)}`, { method: 'DELETE' })
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      if (selectedPath === targetPath) {
-        setSelectedPath('')
-        setSelectedContent(null)
-      }
-      await loadCatalog()
-      setError('')
+      await navigator.clipboard.writeText(agentDeleteRequest)
     } catch {
-      setError('Failed to delete memory file')
-    } finally {
-      setActionLoading(false)
+      setError('Failed to copy agent delete request')
     }
   }
 
@@ -282,13 +286,24 @@ export default function MemoryManagementPage() {
                       </button>
                     )}
                     <button
-                      onClick={() => handleDelete(selectedContent.path)}
-                      disabled={actionLoading}
+                      onClick={() => handleDeleteRequest(selectedContent.path)}
                       className="px-2.5 py-1.5 text-xs rounded border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      Delete File
+                      Request Delete (Agent)
                     </button>
                   </div>
+                  {agentDeleteRequest && (
+                    <div className="mt-3 p-3 rounded border border-red-200 bg-red-50">
+                      <p className="text-xs font-medium text-red-700">Agent Deletion Request</p>
+                      <pre className="mt-2 text-xs whitespace-pre-wrap break-words text-red-800">{agentDeleteRequest}</pre>
+                      <button
+                        onClick={copyDeleteRequest}
+                        className="mt-2 px-2 py-1 text-xs rounded border border-red-300 text-red-700 bg-white hover:bg-red-100"
+                      >
+                        Copy Request
+                      </button>
+                    </div>
+                  )}
                   <div className="mt-3 max-h-[70vh] overflow-y-auto pr-1">
                     {renderMarkdownFriendly(selectedContent.content)}
                   </div>

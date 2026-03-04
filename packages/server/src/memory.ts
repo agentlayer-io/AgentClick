@@ -284,21 +284,6 @@ export function removeMemoryFileFromContext(input: { projectRoot: string; filePa
   return { ok: true, includedPaths: next }
 }
 
-export function deleteMemoryFile(input: { projectRoot: string; filePath: string }): { ok: boolean; deletedPath?: string; reason?: string } {
-  const catalog = buildMemoryCatalog({ projectRoot: input.projectRoot })
-  const target = catalog.files.find(f => path.resolve(f.path) === path.resolve(input.filePath))
-  if (!target) return { ok: false, reason: 'File not found in memory catalog' }
-  try {
-    fs.unlinkSync(target.path)
-  } catch (err) {
-    return { ok: false, reason: err instanceof Error ? err.message : String(err) }
-  }
-  const current = new Set(readIncludedMemoryPaths().map(p => path.resolve(p)))
-  current.delete(path.resolve(target.path))
-  writeIncludedMemoryPaths(Array.from(current.values()).sort())
-  return { ok: true, deletedPath: target.path }
-}
-
 export function buildMemoryReviewPayload(input: {
   projectRoot: string
   currentContextFiles?: string[]
