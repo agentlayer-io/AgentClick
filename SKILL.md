@@ -32,10 +32,31 @@ Canonical types accepted by `POST /api/review`:
 - `action_approval`
 - `code_review`
 - `email_review`
+- `memory_review`
 - `plan_review`
 - `trajectory_review`
 - `form_review` (UI-routed, schema depends on caller)
 - `selection_review` (UI-routed, schema depends on caller)
+
+Related (non-`/api/review` utility flow):
+
+- `memory_management` via `GET /api/memory/files` + `GET /api/memory/file`
+
+## Trigger Routing
+
+Main trigger keyword: `review`.
+
+When user intent contains `review ...`, route to the corresponding review flow:
+
+- `review command|shell|script|diff|code` -> `code_review`
+- `review email|draft|reply` -> `email_review`
+- `review plan|steps|execution strategy` -> `plan_review`
+- `review trajectory|run log|what happened` -> `trajectory_review`
+- `review memory|memory update|memory changes` -> `memory_review`
+- `review memory files|browse memory|open memory file` -> `memory_management`
+- `review action|approval|risky action` -> `action_approval`
+
+If ambiguous, ask a short disambiguation question before creating a session.
 
 ## Shared API Flow
 
@@ -283,6 +304,69 @@ Execution rule:
 - `approved: true` -> execute the modified plan
 - `approved: false` -> stop
 - `rewriting` -> revise and resubmit payload
+
+### Memory Review (`memory_review`)
+
+Use when memory inclusion, memory-file updates, or compression keep/disregard decisions need human review.
+
+Payload (current flow):
+
+```json
+{
+  "title": "Memory Review",
+  "groups": [{ "id": "group_project", "label": "In This Project", "fileIds": ["mem_a"] }],
+  "files": [
+    {
+      "id": "mem_a",
+      "path": "/abs/path/MEMORY.md",
+      "relativePath": "MEMORY.md",
+      "categories": ["project", "related_markdown"],
+      "preview": "..."
+    }
+  ],
+  "defaultIncludedFileIds": ["mem_a"],
+  "modifications": [
+    {
+      "id": "mod_1",
+      "fileId": "mem_a",
+      "filePath": "/abs/path/MEMORY.md",
+      "location": "MEMORY.md",
+      "oldContent": "...",
+      "newContent": "...",
+      "generatedContent": "..."
+    }
+  ],
+  "compressionRecommendations": [
+    { "fileId": "mem_a", "recommendation": "include|disregard", "reason": "..." }
+  ]
+}
+```
+
+Result (`completed`) typically contains:
+
+```json
+{
+  "approved": true,
+  "includedFileIds": ["mem_a"],
+  "disregardedFileIds": [],
+  "compressionDecisions": { "mem_a": "include" },
+  "modificationReview": { "mod_1": true },
+  "globalNote": "optional"
+}
+```
+
+Execution rule:
+
+- `approved: true` -> apply selected memory modifications and inclusion set
+- `approved: false` -> do not apply memory changes
+
+### Memory Management (`memory_management`)
+
+Use for browsing full memory files (not a session-complete review type).
+
+- List files: `GET /api/memory/files`
+- Open full file: `GET /api/memory/file?path=<absolute-path>`
+- UI route: `/memory-management`
 
 ### Trajectory Review (`trajectory_review`)
 
