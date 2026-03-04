@@ -7,6 +7,7 @@ import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { learnFromDeletions, learnFromTrajectoryRevisions, getLearnedPreferences, clearPreferences, deletePreference } from './preference.js'
 import { createSession, getSession, listSessions, completeSession, setSessionRewriting, updateSessionPayload } from './store.js'
+import { buildMemoryReviewPayload } from './memory.js'
 
 const app = express()
 const DEFAULT_PORT = 38173
@@ -106,6 +107,7 @@ app.get('/api/home-info', (_req, res) => {
     { type: 'code_review', route: '/code-review/:id' },
     { type: 'email_review', route: '/review/:id' },
     { type: 'plan_review', route: '/plan/:id' },
+    { type: 'memory_review', route: '/memory/:id' },
     { type: 'trajectory_review', route: '/trajectory/:id' },
     { type: 'form_review', route: '/form-review/:id' },
     { type: 'selection_review', route: '/selection/:id' },
@@ -207,6 +209,7 @@ app.post('/api/review', async (req, res) => {
     selection_review: 'selection',
     trajectory_review: 'trajectory',
     plan_review: 'plan',
+    memory_review: 'memory',
   }
   const path = routeMap[type] ?? 'review'
   const url = `${WEB_ORIGIN}/${path}/${id}`
@@ -228,6 +231,40 @@ app.post('/api/review', async (req, res) => {
   res.json({ sessionId: id, url })
 })
 
+app.post('/api/memory/review/create', async (req, res) => {
+  const { sessionKey, noOpen, openHome, currentContextFiles, generatedContent } = req.body ?? {}
+  const projectRoot = join(__dirname, '../../..')
+  const payload = buildMemoryReviewPayload({
+    projectRoot,
+    currentContextFiles: Array.isArray(currentContextFiles) ? currentContextFiles : undefined,
+    generatedContent: typeof generatedContent === 'string' ? generatedContent : undefined,
+  })
+
+  const now = Date.now()
+  const id = `session_${now}`
+  createSession({
+    id,
+    type: 'memory_review',
+    payload,
+    sessionKey,
+    status: 'pending',
+    createdAt: now,
+    updatedAt: now,
+    revision: 0,
+  })
+
+  const url = `${WEB_ORIGIN}/memory/${id}`
+  if (!noOpen) {
+    try {
+      await open(url)
+      if (openHome) await open(`${WEB_ORIGIN}/`)
+    } catch (err) {
+      console.warn('[agentclick] Failed to open memory review browser tab:', err)
+    }
+  }
+  res.json({ sessionId: id, url })
+})
+
 // Batch create sessions silently (no browser open)
 app.post('/api/review/batch', (req, res) => {
   const items = req.body.sessions
@@ -241,6 +278,7 @@ app.post('/api/review/batch', (req, res) => {
     form_review: 'form-review',
     selection_review: 'selection',
     trajectory_review: 'trajectory',
+    memory_review: 'memory',
   }
 
   const results = items.map((item: { type?: string; sessionKey?: string; payload?: unknown }) => {

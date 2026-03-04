@@ -9,6 +9,8 @@ import SelectionPage from './pages/SelectionPage'
 import TrajectoryPage from './pages/TrajectoryPage'
 import PlanPage from './pages/PlanPage'
 import PlanTestPage from './pages/PlanTestPage'
+import MemoryReviewPage from './pages/MemoryReviewPage'
+import MemoryTestPage from './pages/MemoryTestPage'
 import PortsPage from './pages/PortsPage'
 import PreferencesPage from './pages/PreferencesPage'
 import CompletedPage from './pages/CompletedPage'
@@ -103,6 +105,8 @@ export default function App() {
         <Route path="/trajectory/:id" element={<TrajectoryPage />} />
         <Route path="/plan/:id" element={<PlanPage />} />
         <Route path="/plan-test" element={<PlanTestPage />} />
+        <Route path="/memory/:id" element={<MemoryReviewPage />} />
+        <Route path="/memory-test" element={<MemoryTestPage />} />
         <Route path="/ports" element={<PortsPage />} />
         <Route path="/preferences" element={<PreferencesPage />} />
         <Route path="/completed" element={<CompletedPage />} />

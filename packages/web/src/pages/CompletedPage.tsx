@@ -20,6 +20,7 @@ const TYPE_LABELS: Record<string, string> = {
   selection_review: 'Selection',
   trajectory_review: 'Trajectory',
   plan_review:       'Plan',
+  memory_review:     'Memory',
 }
 
 function sessionPath(s: SessionItem): string {
@@ -29,6 +30,7 @@ function sessionPath(s: SessionItem): string {
   if (s.type === 'selection_review') return `/selection/${s.id}`
   if (s.type === 'trajectory_review') return `/trajectory/${s.id}`
   if (s.type === 'plan_review') return `/plan/${s.id}`
+  if (s.type === 'memory_review') return `/memory/${s.id}`
   return `/review/${s.id}`
 }
 
