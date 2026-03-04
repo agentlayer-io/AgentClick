@@ -139,6 +139,13 @@ export default function HomePage() {
             <h1 className="text-xl font-semibold text-zinc-900 dark:text-slate-100">Pending</h1>
             <div className="flex items-center gap-4">
               <button
+                onClick={() => navigate('/ports')}
+                className="flex items-center gap-1.5 text-sm text-zinc-400 dark:text-slate-500 hover:text-zinc-600 dark:hover:text-slate-300 transition-colors"
+              >
+                Ports
+                <span className="text-zinc-300 dark:text-zinc-600">›</span>
+              </button>
+              <button
                 onClick={() => navigate('/completed')}
                 className="flex items-center gap-1.5 text-sm text-zinc-400 dark:text-slate-500 hover:text-zinc-600 dark:hover:text-slate-300 transition-colors"
               >

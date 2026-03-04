@@ -11,9 +11,9 @@ cd /Users/hm/.openclaw/workspace/AgentClick
 npm start
 ```
 
-Default server: `http://localhost:3001`
+Default server: `http://localhost:38173` (legacy deployments may still use `:3001`)
 
-Containerized clients may use `http://host.docker.internal:3001`.
+Containerized clients may use `http://host.docker.internal:38173` (or your overridden `PORT`).
 
 ## Supported Review Types
 
@@ -32,7 +32,7 @@ Canonical types accepted by `POST /api/review`:
 ### 1) Create session
 
 ```bash
-curl -s -X POST http://localhost:3001/api/review \
+curl -s -X POST http://localhost:38173/api/review \
   -H 'Content-Type: application/json' \
   -d '{
     "type": "action_approval",
@@ -47,13 +47,19 @@ Response:
 { "sessionId": "session_...", "url": "http://localhost:5173/..." }
 ```
 
-### 2) Wait for human decision
+### 2) Wait for human decision (required active polling)
 
 ```bash
-curl -s "http://localhost:3001/api/sessions/<sessionId>/wait"
+curl -s "http://localhost:38173/api/sessions/<sessionId>/wait"
 ```
 
 `/wait` blocks up to 5 minutes. Returns the session when status becomes `completed` or `rewriting`.
+
+Important:
+
+- AgentClick does not push approval directly into your running agent process.
+- After creating a review session, your agent must actively poll/block on `/api/sessions/:id/wait`.
+- If you do not keep an active `/wait` loop, approval will not trigger execution automatically.
 
 ### 3) Act on status
 
@@ -63,7 +69,7 @@ curl -s "http://localhost:3001/api/sessions/<sessionId>/wait"
 ### 4) Rewrite payload (when requested)
 
 ```bash
-curl -s -X PUT "http://localhost:3001/api/sessions/<sessionId>/payload" \
+curl -s -X PUT "http://localhost:38173/api/sessions/<sessionId>/payload" \
   -H 'Content-Type: application/json' \
   -d '{ "payload": { "...": "updated" } }'
 ```

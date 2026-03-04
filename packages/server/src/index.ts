@@ -9,16 +9,86 @@ import { learnFromDeletions, learnFromTrajectoryRevisions, getLearnedPreferences
 import { createSession, getSession, listSessions, completeSession, setSessionRewriting, updateSessionPayload } from './store.js'
 
 const app = express()
-const PORT = Number(process.env.PORT || 3001)
+const DEFAULT_PORT = 38173
+const PORT = Number(process.env.PORT || DEFAULT_PORT)
 const OPENCLAW_WEBHOOK = process.env.OPENCLAW_WEBHOOK || 'http://localhost:18789/hooks/agent'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 const WEB_DIST_DIR = join(__dirname, '../../web/dist')
 const SHOULD_SERVE_BUILT_WEB = existsSync(WEB_DIST_DIR) && (__filename.endsWith('/dist/index.js') || process.env.NODE_ENV === 'production')
-const WEB_ORIGIN = SHOULD_SERVE_BUILT_WEB ? `http://localhost:${PORT}` : 'http://localhost:5173'
+const WEB_ORIGIN = process.env.WEB_ORIGIN || (SHOULD_SERVE_BUILT_WEB ? `http://localhost:${PORT}` : 'http://localhost:5173')
 
 app.use(cors())
 app.use(express.json())
+
+function parsePortFromOrigin(origin: string): number | null {
+  try {
+    const url = new URL(origin)
+    if (url.port) return Number(url.port)
+    return url.protocol === 'https:' ? 443 : 80
+  } catch {
+    return null
+  }
+}
+
+async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// Lightweight identity endpoint so clients can verify the service is AgentClick.
+app.get('/api/identity', (_req, res) => {
+  res.json({
+    service: 'agentclick',
+    ok: true,
+    serverPort: PORT,
+    webOrigin: WEB_ORIGIN,
+    mode: SHOULD_SERVE_BUILT_WEB ? 'embedded-web' : 'dev-web',
+  })
+})
+
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, service: 'agentclick', serverPort: PORT })
+})
+
+app.get('/api/ports-status', async (_req, res) => {
+  const now = Date.now()
+  const webPort = parsePortFromOrigin(WEB_ORIGIN)
+  let webReachable = false
+  let webStatus = 0
+  let webError = ''
+
+  try {
+    const webResponse = await fetchWithTimeout(`${WEB_ORIGIN}/`, 1500)
+    webStatus = webResponse.status
+    webReachable = webResponse.ok
+  } catch (err) {
+    webError = err instanceof Error ? err.message : String(err)
+  }
+
+  res.json({
+    checkedAt: now,
+    server: {
+      port: PORT,
+      reachable: true,
+      isAgentClick: true,
+      mode: SHOULD_SERVE_BUILT_WEB ? 'embedded-web' : 'dev-web',
+      identityEndpoint: `/api/identity`,
+    },
+    web: {
+      origin: WEB_ORIGIN,
+      port: webPort,
+      reachable: webReachable,
+      status: webStatus,
+      error: webError || undefined,
+    },
+  })
+})
 
 // OpenClaw calls this when a review is needed
 app.post('/api/review', async (req, res) => {
