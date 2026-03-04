@@ -7,7 +7,14 @@ import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { learnFromDeletions, learnFromTrajectoryRevisions, getLearnedPreferences, clearPreferences, deletePreference } from './preference.js'
 import { createSession, getSession, listSessions, completeSession, setSessionRewriting, updateSessionPayload } from './store.js'
-import { buildMemoryCatalog, buildMemoryReviewPayload, readMemoryFileContent } from './memory.js'
+import {
+  buildMemoryCatalog,
+  buildMemoryReviewPayload,
+  deleteMemoryFile,
+  includeMemoryFileInContext,
+  readMemoryFileContent,
+  removeMemoryFileFromContext,
+} from './memory.js'
 
 const app = express()
 const DEFAULT_PORT = 38173
@@ -250,6 +257,33 @@ app.get('/api/memory/file', (req, res) => {
   const file = readMemoryFileContent({ projectRoot, filePath })
   if (!file) return res.status(404).json({ error: 'File not found in memory catalog' })
   res.json(file)
+})
+
+app.post('/api/memory/include', (req, res) => {
+  const projectRoot = join(__dirname, '../../..')
+  const filePath = typeof req.body?.path === 'string' ? req.body.path : ''
+  if (!filePath) return res.status(400).json({ error: 'Missing path in request body' })
+  const result = includeMemoryFileInContext({ projectRoot, filePath })
+  if (!result.ok) return res.status(404).json({ error: 'File not found in memory catalog' })
+  res.json(result)
+})
+
+app.post('/api/memory/exclude', (req, res) => {
+  const projectRoot = join(__dirname, '../../..')
+  const filePath = typeof req.body?.path === 'string' ? req.body.path : ''
+  if (!filePath) return res.status(400).json({ error: 'Missing path in request body' })
+  const result = removeMemoryFileFromContext({ projectRoot, filePath })
+  if (!result.ok) return res.status(404).json({ error: 'File not found in memory catalog' })
+  res.json(result)
+})
+
+app.delete('/api/memory/file', (req, res) => {
+  const projectRoot = join(__dirname, '../../..')
+  const filePath = typeof req.query.path === 'string' ? req.query.path : ''
+  if (!filePath) return res.status(400).json({ error: 'Missing path query' })
+  const result = deleteMemoryFile({ projectRoot, filePath })
+  if (!result.ok) return res.status(400).json({ error: result.reason || 'Failed to delete file' })
+  res.json(result)
 })
 
 app.post('/api/memory/review/create', async (req, res) => {

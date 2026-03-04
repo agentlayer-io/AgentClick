@@ -51,6 +51,8 @@ export interface MemoryCatalogPayload {
   defaultIncludedFileIds: string[]
 }
 
+const MEMORY_INCLUDE_STATE_PATH = path.join(os.homedir(), '.openclaw', 'agentclick-memory-includes.json')
+
 function walkMarkdownFiles(baseDir: string, options?: { maxFiles?: number }): string[] {
   const maxFiles = options?.maxFiles ?? 200
   const output: string[] = []
@@ -89,6 +91,23 @@ function safeRead(filePath: string, maxChars = 12000): string {
   } catch {
     return ''
   }
+}
+
+function readIncludedMemoryPaths(): string[] {
+  try {
+    if (!fs.existsSync(MEMORY_INCLUDE_STATE_PATH)) return []
+    const raw = fs.readFileSync(MEMORY_INCLUDE_STATE_PATH, 'utf-8')
+    const parsed = JSON.parse(raw) as { includedPaths?: string[] }
+    return (parsed.includedPaths ?? []).filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+function writeIncludedMemoryPaths(paths: string[]): void {
+  const dir = path.dirname(MEMORY_INCLUDE_STATE_PATH)
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(MEMORY_INCLUDE_STATE_PATH, JSON.stringify({ includedPaths: paths }, null, 2), 'utf-8')
 }
 
 function parseSections(markdown: string): Array<{ id: string; title: string }> {
@@ -134,7 +153,11 @@ export function buildMemoryCatalog(input: {
   currentContextFiles?: string[]
 }): MemoryCatalogPayload {
   const projectRoot = input.projectRoot
-  const currentContextSet = new Set((input.currentContextFiles ?? []).map(p => path.resolve(projectRoot, p)))
+  const persistedIncludes = readIncludedMemoryPaths().map(p => path.resolve(p))
+  const currentContextSet = new Set([
+    ...persistedIncludes,
+    ...(input.currentContextFiles ?? []).map(p => path.resolve(projectRoot, p)),
+  ])
   const relatedMarkdown = walkMarkdownFiles(projectRoot, { maxFiles: 220 })
   const projectMemoryFiles = relatedMarkdown.filter(p => path.basename(p).toLowerCase().includes('memory'))
   const agentCacheFiles = collectAgentCacheMemoryFiles()
@@ -237,6 +260,43 @@ export function readMemoryFileContent(input: {
     relativePath: target.relativePath,
     content,
   }
+}
+
+export function includeMemoryFileInContext(input: { projectRoot: string; filePath: string }): { ok: boolean; includedPaths: string[] } {
+  const catalog = buildMemoryCatalog({ projectRoot: input.projectRoot })
+  const target = catalog.files.find(f => path.resolve(f.path) === path.resolve(input.filePath))
+  if (!target) return { ok: false, includedPaths: readIncludedMemoryPaths() }
+  const current = new Set(readIncludedMemoryPaths().map(p => path.resolve(p)))
+  current.add(path.resolve(target.path))
+  const next = Array.from(current.values()).sort()
+  writeIncludedMemoryPaths(next)
+  return { ok: true, includedPaths: next }
+}
+
+export function removeMemoryFileFromContext(input: { projectRoot: string; filePath: string }): { ok: boolean; includedPaths: string[] } {
+  const catalog = buildMemoryCatalog({ projectRoot: input.projectRoot })
+  const target = catalog.files.find(f => path.resolve(f.path) === path.resolve(input.filePath))
+  if (!target) return { ok: false, includedPaths: readIncludedMemoryPaths() }
+  const current = new Set(readIncludedMemoryPaths().map(p => path.resolve(p)))
+  current.delete(path.resolve(target.path))
+  const next = Array.from(current.values()).sort()
+  writeIncludedMemoryPaths(next)
+  return { ok: true, includedPaths: next }
+}
+
+export function deleteMemoryFile(input: { projectRoot: string; filePath: string }): { ok: boolean; deletedPath?: string; reason?: string } {
+  const catalog = buildMemoryCatalog({ projectRoot: input.projectRoot })
+  const target = catalog.files.find(f => path.resolve(f.path) === path.resolve(input.filePath))
+  if (!target) return { ok: false, reason: 'File not found in memory catalog' }
+  try {
+    fs.unlinkSync(target.path)
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) }
+  }
+  const current = new Set(readIncludedMemoryPaths().map(p => path.resolve(p)))
+  current.delete(path.resolve(target.path))
+  writeIncludedMemoryPaths(Array.from(current.values()).sort())
+  return { ok: true, deletedPath: target.path }
 }
 
 export function buildMemoryReviewPayload(input: {

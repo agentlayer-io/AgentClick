@@ -6,6 +6,7 @@ interface MemoryFile {
   relativePath: string
   categories: string[]
   preview: string
+  inCurrentContent: boolean
 }
 
 interface MemoryGroup {
@@ -98,19 +99,26 @@ export default function MemoryManagementPage() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [fileLoading, setFileLoading] = useState(false)
+  const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const loadCatalog = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/memory/files')
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const data = await response.json() as CatalogResponse
+      setCatalog(data)
+      setError('')
+    } catch {
+      setError('Failed to load memory catalog')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    fetch('/api/memory/files')
-      .then(r => r.json())
-      .then((data: CatalogResponse) => {
-        setCatalog(data)
-        setLoading(false)
-      })
-      .catch(() => {
-        setError('Failed to load memory catalog')
-        setLoading(false)
-      })
+    loadCatalog()
   }, [])
 
   const fileMap = useMemo(() => {
@@ -142,6 +150,49 @@ export default function MemoryManagementPage() {
       else next.add(id)
       return next
     })
+  }
+
+  const selectedFile = useMemo(() => {
+    if (!selectedPath) return null
+    return catalog?.files.find(file => file.path === selectedPath) ?? null
+  }, [catalog, selectedPath])
+
+  const setInContext = async (targetPath: string, include: boolean) => {
+    setActionLoading(true)
+    try {
+      const response = await fetch(include ? '/api/memory/include' : '/api/memory/exclude', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: targetPath }),
+      })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      await loadCatalog()
+      setError('')
+    } catch {
+      setError(include ? 'Failed to include file in current content' : 'Failed to exclude file from current content')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleDelete = async (targetPath: string) => {
+    const confirmed = window.confirm('Delete this memory file permanently?')
+    if (!confirmed) return
+    setActionLoading(true)
+    try {
+      const response = await fetch(`/api/memory/file?path=${encodeURIComponent(targetPath)}`, { method: 'DELETE' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      if (selectedPath === targetPath) {
+        setSelectedPath('')
+        setSelectedContent(null)
+      }
+      await loadCatalog()
+      setError('')
+    } catch {
+      setError('Failed to delete memory file')
+    } finally {
+      setActionLoading(false)
+    }
   }
 
   return (
@@ -212,6 +263,32 @@ export default function MemoryManagementPage() {
                 <>
                   <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase mb-1">Full File</p>
                   <h2 className="text-sm font-mono text-zinc-800 dark:text-slate-200 break-all">{selectedContent.path}</h2>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {selectedFile?.inCurrentContent ? (
+                      <button
+                        onClick={() => setInContext(selectedContent.path, false)}
+                        disabled={actionLoading}
+                        className="px-2.5 py-1.5 text-xs rounded border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        Remove From Context
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setInContext(selectedContent.path, true)}
+                        disabled={actionLoading}
+                        className="px-2.5 py-1.5 text-xs rounded border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        Include In Context
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDelete(selectedContent.path)}
+                      disabled={actionLoading}
+                      className="px-2.5 py-1.5 text-xs rounded border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      Delete File
+                    </button>
+                  </div>
                   <div className="mt-3 max-h-[70vh] overflow-y-auto pr-1">
                     {renderMarkdownFriendly(selectedContent.content)}
                   </div>
@@ -224,4 +301,3 @@ export default function MemoryManagementPage() {
     </div>
   )
 }
-
