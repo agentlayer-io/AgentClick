@@ -323,6 +323,7 @@ app.post('/api/review/batch', (req, res) => {
     form_review: 'form-review',
     selection_review: 'selection',
     trajectory_review: 'trajectory',
+    plan_review: 'plan',
     memory_review: 'memory',
   }
 

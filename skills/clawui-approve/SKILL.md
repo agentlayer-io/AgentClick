@@ -10,10 +10,11 @@ When you are about to take a high-risk action (sending messages, deleting data, 
 ## Step 1: Submit for approval
 
 ```bash
-RESPONSE=$(curl -s -X POST http://host.docker.internal:3001/api/review \
+RESPONSE=$(curl -s -X POST "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/review" \
   -H "Content-Type: application/json" \
   -d '{
     "type": "action_approval",
+    "sessionKey": "'"$SESSION_KEY"'",
     "payload": {
       "action": "ONE_LINE_DESCRIPTION",
       "description": "FULL_DETAIL_OF_WHAT_YOU_WILL_DO",
@@ -29,13 +30,10 @@ Save the `sessionId` from the response.
 
 ```bash
 SESSION_ID="<sessionId from Step 1>"
-curl -s "http://host.docker.internal:3001/api/sessions/${SESSION_ID}/wait"
+curl -s "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/sessions/${SESSION_ID}/wait"
 ```
 
 The browser opens automatically. This call blocks until the user submits.
-
-Browser behavior:
-- AgentClick opens the specific review page.
 
 ## Step 3: Act on the decision
 

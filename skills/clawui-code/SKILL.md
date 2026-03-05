@@ -30,10 +30,11 @@ Escape each diff as a JSON string: replace newlines with `\n` and double-quotes 
 ## Step 2: Submit the command for review
 
 ```bash
-RESPONSE=$(curl -s -X POST http://host.docker.internal:3001/api/review \
+RESPONSE=$(curl -s -X POST "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/review" \
   -H "Content-Type: application/json" \
   -d '{
     "type": "code_review",
+    "sessionKey": "'"$SESSION_KEY"'",
     "payload": {
       "command": "THE_EXACT_COMMAND_YOU_WANT_TO_RUN",
       "cwd": "WORKING_DIRECTORY",
@@ -84,13 +85,10 @@ If you cannot generate a diff (e.g. the command doesn't touch tracked files), om
 ## Step 3: Wait for decision (blocks up to 5 minutes)
 
 ```bash
-curl -s "http://host.docker.internal:3001/api/sessions/${SESSION_ID}/wait"
+curl -s "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/sessions/${SESSION_ID}/wait"
 ```
 
 The browser opens automatically. This call blocks until the user approves or rejects.
-
-Browser behavior:
-- AgentClick opens the code review page.
 
 ## Step 4: Act on the decision
 

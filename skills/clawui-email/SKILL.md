@@ -39,10 +39,11 @@ The main agent submits the draft and immediately hands off to a sub-agent. It do
 ### Step 1: Submit draft for review
 
 ```bash
-RESPONSE=$(curl -s -X POST http://host.docker.internal:3001/api/review \
+RESPONSE=$(curl -s -X POST "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/review" \
   -H "Content-Type: application/json" \
   -d '{
     "type": "email_review",
+    "sessionKey": "'"$SESSION_KEY"'",
     "payload": {
       "inbox": [
         {
@@ -112,7 +113,7 @@ Repeat until done (max 10 rewrite rounds):
 
 ```bash
 RESULT=$(curl -s --max-time 310 \
-  "http://host.docker.internal:3001/api/sessions/${SESSION_ID}/wait")
+  "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/sessions/${SESSION_ID}/wait")
 STATUS=$(echo "$RESULT" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
 echo "STATUS=$STATUS"
 echo "$RESULT"
@@ -160,7 +161,7 @@ cat > /tmp/clawui_payload.json <<'JSON'
 JSON
 
 HTTP_CODE=$(curl -s -o /tmp/clawui_put_response.txt -w "%{http_code}" \
-  -X PUT "http://host.docker.internal:3001/api/sessions/${SESSION_ID}/payload" \
+  -X PUT "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/sessions/${SESSION_ID}/payload" \
   -H "Content-Type: application/json" \
   -d @/tmp/clawui_payload.json)
 echo "PUT_HTTP=$HTTP_CODE"
