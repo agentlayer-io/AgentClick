@@ -62,7 +62,11 @@ No WebSockets, no framework plugins. One HTTP endpoint in, one HTTP endpoint out
 - **email_review** -- two-column inbox and draft editor. Users can delete paragraphs with reasons, request rewrites, toggle intent suggestions, and confirm or regenerate.
 - **code_review** -- displays the shell command, working directory, affected files as a collapsible tree, and risk level. Approve or reject with an optional note.
 - **action_approval** -- generic high-risk action gate. Shows action description, detail, and risk badge. Approve or reject with an optional note.
+- **form_review** -- editable key-value form. Each field can be free-text or a dropdown. Agent receives the edited values on completion.
+- **selection_review** -- single or multi-select option picker. Agent receives the chosen option IDs.
 - **trajectory_review** -- DAG visualization of a multi-step agent execution. Users can mark incorrect steps, provide per-step guidance, set a resume point, and request a retry. Guidance with "Remember this" checked is persisted to `MEMORY.md` for future runs.
+- **plan_review** -- step tree with DAG layout for reviewing an agent's proposed plan before execution. Users can edit step labels, insert or remove steps, add constraints, choose an alternative plan, or request a regeneration.
+- **memory_review** -- grouped file browser for reviewing agent memory modifications. Users decide which files to include or disregard, accept or reject proposed edits, and leave a global note for the agent.
 
 ---
 
