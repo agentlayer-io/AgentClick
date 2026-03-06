@@ -17,6 +17,7 @@ db.exec(`
     payload TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     result TEXT,
+    pageStatus TEXT,
     sessionKey TEXT,
     createdAt INTEGER NOT NULL,
     updatedAt INTEGER NOT NULL DEFAULT 0,
@@ -31,6 +32,14 @@ try {
 try {
   db.exec(`ALTER TABLE sessions ADD COLUMN revision INTEGER NOT NULL DEFAULT 0`)
 } catch { /* column already exists */ }
+try {
+  db.exec(`ALTER TABLE sessions ADD COLUMN pageStatus TEXT`)
+} catch { /* column already exists */ }
+
+export interface SessionPageStatus {
+  state: 'created' | 'opened' | 'active' | 'hidden' | 'submitted'
+  updatedAt: number
+}
 
 export interface Session {
   id: string
@@ -38,6 +47,7 @@ export interface Session {
   payload: unknown
   status: 'pending' | 'rewriting' | 'completed'
   result?: unknown
+  pageStatus?: SessionPageStatus
   sessionKey?: string
   createdAt: number
   updatedAt: number
@@ -46,11 +56,13 @@ export interface Session {
 
 export function createSession(session: Session): void {
   db.prepare(`
-    INSERT INTO sessions (id, type, payload, status, sessionKey, createdAt, updatedAt, revision)
-    VALUES (@id, @type, @payload, @status, @sessionKey, @createdAt, @updatedAt, @revision)
+    INSERT INTO sessions (id, type, payload, status, result, pageStatus, sessionKey, createdAt, updatedAt, revision)
+    VALUES (@id, @type, @payload, @status, @result, @pageStatus, @sessionKey, @createdAt, @updatedAt, @revision)
   `).run({
     ...session,
     payload: JSON.stringify(session.payload),
+    result: session.result ? JSON.stringify(session.result) : null,
+    pageStatus: session.pageStatus ? JSON.stringify(session.pageStatus) : null,
     updatedAt: session.updatedAt || Date.now(),
     revision: session.revision || 0,
   })
@@ -85,6 +97,12 @@ export function updateSessionPayload(id: string, payload: unknown): void {
   `).run(JSON.stringify(payload), Date.now(), id)
 }
 
+export function updateSessionPageStatus(id: string, pageStatus: SessionPageStatus): void {
+  db.prepare(`
+    UPDATE sessions SET pageStatus = ?, updatedAt = ? WHERE id = ?
+  `).run(JSON.stringify(pageStatus), Date.now(), id)
+}
+
 function deserialize(row: Record<string, unknown>): Session {
   return {
     id: row.id as string,
@@ -92,6 +110,7 @@ function deserialize(row: Record<string, unknown>): Session {
     payload: JSON.parse(row.payload as string),
     status: row.status as 'pending' | 'rewriting' | 'completed',
     result: row.result ? JSON.parse(row.result as string) : undefined,
+    pageStatus: row.pageStatus ? JSON.parse(row.pageStatus as string) : undefined,
     sessionKey: row.sessionKey as string | undefined,
     createdAt: row.createdAt as number,
     updatedAt: (row.updatedAt as number) || 0,

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 type CompressionDecision = 'include' | 'disregard'
+type PageStatusState = 'opened' | 'active' | 'hidden' | 'submitted'
 
 interface MemoryFile {
   id: string
@@ -14,6 +15,8 @@ interface MemoryFile {
   inProject: boolean
   inAgentCache: boolean
   relatedMarkdown: boolean
+  pinnedByPreference: boolean
+  matchedBySearch: boolean
   preview: string
   sections: Array<{ id: string; title: string }>
 }
@@ -48,6 +51,15 @@ interface MemoryPayload {
   defaultIncludedFileIds: string[]
   modifications: MemoryModification[]
   compressionRecommendations: CompressionRecommendation[]
+  persistedIncludedPaths: string[]
+  persistedDirectoryPaths: string[]
+  searchQuery?: string
+}
+
+interface MemoryResolveResult {
+  files: Array<{ path: string; relativePath: string }>
+  directories: string[]
+  ignoredInputs: string[]
 }
 
 interface MemoryTreeNode {
@@ -57,12 +69,6 @@ interface MemoryTreeNode {
   fileId?: string
   changed: boolean
   children?: MemoryTreeNode[]
-}
-
-interface AffectedMemoryFile {
-  path: string
-  fileId: string
-  status: 'modified'
 }
 
 function formatBytes(size: number): string {
@@ -116,7 +122,7 @@ function buildMemoryTree(files: MemoryFile[], changedFileIds: Set<string>): Memo
     const parts = file.relativePath.split('/').filter(Boolean)
     let current = root
     let currentPath = ''
-    for (let i = 0; i < parts.length; i++) {
+    for (let i = 0; i < parts.length; i += 1) {
       const part = parts[i]
       const isLeaf = i === parts.length - 1
       currentPath = currentPath ? `${currentPath}/${part}` : part
@@ -168,11 +174,6 @@ function buildMemoryTree(files: MemoryFile[], changedFileIds: Set<string>): Memo
 const CURVE_W = 36
 const CHILD_GAP = 5
 
-function hasChangedDescendant(node: MemoryTreeNode): boolean {
-  if (node.changed) return true
-  return node.children?.some(hasChangedDescendant) ?? false
-}
-
 function bezierD(x1: number, y1: number, x2: number, y2: number): string {
   const cx = (x1 + x2) * 0.55
   return `M ${x1},${y1} C ${cx},${y1} ${cx},${y2} ${x2},${y2}`
@@ -207,7 +208,7 @@ function MemoryMindPill({
     return (
       <div
         data-pill
-        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono whitespace-nowrap select-none"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-mono whitespace-nowrap select-none"
         style={{
           backgroundColor: node.changed ? 'var(--c-pill-m-bg)' : 'var(--c-dir-neutral-bg)',
           border: node.changed
@@ -230,7 +231,7 @@ function MemoryMindPill({
   return (
     <div
       data-pill
-      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono whitespace-nowrap select-none"
+      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-mono whitespace-nowrap select-none"
       style={{
         backgroundColor: changedAware ? 'var(--c-dir-diff-bg)' : active ? 'var(--c-dir-active-bg)' : 'var(--c-dir-neutral-bg)',
         border: `1px solid ${changedAware ? 'var(--c-dir-diff-border)' : active ? 'var(--c-dir-active-border)' : 'var(--c-dir-neutral-border)'}`,
@@ -282,10 +283,9 @@ function MemoryMindBranch({
       return
     }
     const parentMid = pillRef.current.offsetHeight / 2
-    const container = childrenRef.current
     const childMids: number[] = []
-    for (let i = 0; i < container.children.length; i++) {
-      const el = container.children[i] as HTMLElement
+    for (let i = 0; i < childrenRef.current.children.length; i += 1) {
+      const el = childrenRef.current.children[i] as HTMLElement
       const pill = el.querySelector('[data-pill]') as HTMLElement | null
       const h = pill?.offsetHeight ?? 24
       childMids.push(el.offsetTop + h / 2)
@@ -308,6 +308,7 @@ function MemoryMindBranch({
         ref={pillRef}
         onMouseEnter={() => onHover(node.path)}
         onClick={handleClick}
+        className="rounded-md p-1 -m-1"
         style={{ cursor: node.type === 'file' ? 'pointer' : hasChildren ? 'pointer' : 'default' }}
       >
         <MemoryMindPill
@@ -320,32 +321,12 @@ function MemoryMindBranch({
       </div>
       {totalSlots > 0 && (
         <div style={{ position: 'relative' }}>
-          <svg
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: CURVE_W,
-              height: '100%',
-              overflow: 'visible',
-              pointerEvents: 'none',
-            }}
-          >
+          <svg style={{ position: 'absolute', top: 0, left: 0, width: CURVE_W, height: '100%', overflow: 'visible', pointerEvents: 'none' }}>
             {curves.childMids.map((cy, i) => (
-              <path
-                key={i}
-                d={bezierD(0, curves.parentMid, CURVE_W, cy)}
-                fill="none"
-                stroke="var(--c-curve-lo)"
-                strokeWidth={1}
-              />
+              <path key={i} d={bezierD(0, curves.parentMid, CURVE_W, cy)} fill="none" stroke="var(--c-curve-lo)" strokeWidth={1} />
             ))}
           </svg>
-          <div
-            ref={childrenRef}
-            className="flex flex-col"
-            style={{ gap: CHILD_GAP, paddingLeft: CURVE_W }}
-          >
+          <div ref={childrenRef} className="flex flex-col" style={{ gap: CHILD_GAP, paddingLeft: CURVE_W }}>
             {expanded && node.children!.map(child => (
               <div key={child.path}>
                 <MemoryMindBranch
@@ -403,6 +384,15 @@ function MemoryMindMapFileTree({
   )
 }
 
+function buildCatalogQuery(extraMarkdownDirs: string[], extraFilePaths: string[], searchQuery: string): string {
+  const params = new URLSearchParams()
+  if (extraMarkdownDirs.length > 0) params.set('extraMarkdownDirs', extraMarkdownDirs.join(','))
+  if (extraFilePaths.length > 0) params.set('extraFilePaths', extraFilePaths.join(','))
+  if (searchQuery.trim()) params.set('search', searchQuery.trim())
+  const qs = params.toString()
+  return qs ? `?${qs}` : ''
+}
+
 export default function MemoryReviewPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -411,15 +401,34 @@ export default function MemoryReviewPage() {
   const [fetchError, setFetchError] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [catalogRefreshing, setCatalogRefreshing] = useState(false)
+  const [resolveLoading, setResolveLoading] = useState(false)
   const [globalNote, setGlobalNote] = useState('')
+  const [memoryInput, setMemoryInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchDirInput, setSearchDirInput] = useState('')
+  const [resolvedResult, setResolvedResult] = useState<MemoryResolveResult | null>(null)
+  const [pageState, setPageState] = useState<PageStatusState>('opened')
 
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
-  const [includedFileIds, setIncludedFileIds] = useState<Set<string>>(new Set())
+  const [includedPaths, setIncludedPaths] = useState<Set<string>>(new Set())
+  const [extraMarkdownDirs, setExtraMarkdownDirs] = useState<string[]>([])
+  const [extraFilePaths, setExtraFilePaths] = useState<string[]>([])
   const [compressionDecisionMap, setCompressionDecisionMap] = useState<Map<string, CompressionDecision>>(new Map())
   const [modAcceptMap, setModAcceptMap] = useState<Map<string, boolean>>(new Map())
   const [fullFileContent, setFullFileContent] = useState<string>('')
   const [fullFileLoading, setFullFileLoading] = useState(false)
+
+  const applyCatalog = (basePayload: MemoryPayload, nextCatalog: Partial<MemoryPayload>) => ({
+    ...basePayload,
+    groups: nextCatalog.groups ?? basePayload.groups,
+    files: nextCatalog.files ?? basePayload.files,
+    defaultIncludedFileIds: nextCatalog.defaultIncludedFileIds ?? basePayload.defaultIncludedFileIds,
+    persistedIncludedPaths: nextCatalog.persistedIncludedPaths ?? basePayload.persistedIncludedPaths,
+    persistedDirectoryPaths: nextCatalog.persistedDirectoryPaths ?? basePayload.persistedDirectoryPaths,
+    searchQuery: nextCatalog.searchQuery ?? basePayload.searchQuery,
+  })
 
   useEffect(() => {
     fetch(`/api/sessions/${id}`)
@@ -428,8 +437,12 @@ export default function MemoryReviewPage() {
         const p = data.payload as MemoryPayload
         setPayload(p)
         setLoading(false)
-        setIncludedFileIds(new Set(p.defaultIncludedFileIds ?? []))
+        const fileMapById = new Map((p.files ?? []).map(file => [file.id, file.path]))
+        const defaultPaths = (p.defaultIncludedFileIds ?? []).map(fileId => fileMapById.get(fileId)).filter((value): value is string => !!value)
+        setIncludedPaths(new Set([...(p.persistedIncludedPaths ?? []), ...defaultPaths]))
         setSelectedFileId(p.defaultIncludedFileIds?.[0] ?? p.files?.[0]?.id ?? null)
+        setExtraMarkdownDirs(p.persistedDirectoryPaths ?? [])
+        setSearchQuery(p.searchQuery ?? '')
 
         const comp = new Map<string, CompressionDecision>()
         for (const rec of p.compressionRecommendations ?? []) comp.set(rec.fileId, rec.recommendation)
@@ -442,27 +455,68 @@ export default function MemoryReviewPage() {
       .catch(() => { setFetchError(true); setLoading(false) })
   }, [id])
 
+  const postPageStatus = async (state: PageStatusState) => {
+    setPageState(state)
+    try {
+      await fetch(`/api/sessions/${id}/page-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state }),
+      })
+    } catch {
+      // Presence tracking is observational only.
+    }
+  }
+
+  useEffect(() => {
+    if (!id) return
+    void postPageStatus('opened')
+    const activeTimer = window.setInterval(() => { void postPageStatus(document.visibilityState === 'visible' ? 'active' : 'hidden') }, 10000)
+    const onVisibility = () => { void postPageStatus(document.visibilityState === 'visible' ? 'active' : 'hidden') }
+    const onBeforeUnload = () => { void postPageStatus('hidden') }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => {
+      window.clearInterval(activeTimer)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('beforeunload', onBeforeUnload)
+    }
+  }, [id])
+
+  useEffect(() => {
+    if (!payload) return
+    const timer = window.setTimeout(() => {
+      setCatalogRefreshing(true)
+      fetch(`/api/memory/files${buildCatalogQuery(extraMarkdownDirs, extraFilePaths, searchQuery)}`)
+        .then(r => r.json())
+        .then(data => {
+          setPayload(prev => prev ? applyCatalog(prev, data as Partial<MemoryPayload>) : prev)
+        })
+        .finally(() => setCatalogRefreshing(false))
+    }, 220)
+    return () => window.clearTimeout(timer)
+  }, [payload?.title, extraMarkdownDirs, extraFilePaths, searchQuery])
+
   const fileMap = useMemo(() => {
     const m = new Map<string, MemoryFile>()
     for (const f of payload?.files ?? []) m.set(f.id, f)
     return m
   }, [payload])
 
-  const selectedFile = selectedFileId ? fileMap.get(selectedFileId) ?? null : null
-  const changedFileIds = useMemo(() => new Set((payload?.modifications ?? []).map(m => m.fileId)), [payload])
-  const changedFiles = useMemo(
-    () => (payload?.files ?? []).filter(f => changedFileIds.has(f.id)),
-    [payload, changedFileIds]
-  )
-  const changedTree = useMemo(
-    () => buildMemoryTree(payload?.files ?? [], changedFileIds),
-    [payload, changedFileIds]
-  )
   const pathToFileId = useMemo(() => {
     const m = new Map<string, string>()
-    for (const f of payload?.files ?? []) m.set(f.relativePath, f.id)
+    for (const f of payload?.files ?? []) {
+      m.set(f.relativePath, f.id)
+      m.set(f.path, f.id)
+    }
     return m
   }, [payload])
+
+  const selectedFile = selectedFileId ? fileMap.get(selectedFileId) ?? null : null
+  const changedFileIds = useMemo(() => new Set((payload?.modifications ?? []).map(m => m.fileId)), [payload])
+  const changedFiles = useMemo(() => (payload?.files ?? []).filter(f => changedFileIds.has(f.id)), [payload, changedFileIds])
+  const changedTree = useMemo(() => buildMemoryTree(payload?.files ?? [], changedFileIds), [payload, changedFileIds])
+
   const selectedModification = useMemo(() => {
     if (!selectedFileId || !payload) return null
     return payload.modifications.find(mod => mod.fileId === selectedFileId) ?? null
@@ -479,12 +533,12 @@ export default function MemoryReviewPage() {
       return
     }
     setFullFileLoading(true)
-    fetch(`/api/memory/file?path=${encodeURIComponent(selectedFile.path)}`)
+    fetch(`/api/memory/file?path=${encodeURIComponent(selectedFile.path)}${buildCatalogQuery(extraMarkdownDirs, extraFilePaths, '')}`)
       .then(r => r.json())
       .then(data => setFullFileContent(String(data.content ?? '')))
       .catch(() => setFullFileContent('Failed to load full file content.'))
       .finally(() => setFullFileLoading(false))
-  }, [selectedFile?.path])
+  }, [selectedFile?.path, extraMarkdownDirs, extraFilePaths])
 
   const toggleCollapse = (idValue: string) => {
     setCollapsedIds(prev => {
@@ -495,32 +549,83 @@ export default function MemoryReviewPage() {
     })
   }
 
-  const toggleInclude = (fileId: string) => {
-    setIncludedFileIds(prev => {
+  const toggleInclude = (filePath: string) => {
+    setIncludedPaths(prev => {
       const next = new Set(prev)
-      if (next.has(fileId)) next.delete(fileId)
-      else next.add(fileId)
+      if (next.has(filePath)) next.delete(filePath)
+      else next.add(filePath)
       return next
     })
   }
 
+  const resolveInput = async () => {
+    if (!memoryInput.trim()) return
+    setResolveLoading(true)
+    try {
+      const response = await fetch('/api/memory/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: memoryInput }),
+      })
+      const data = await response.json() as MemoryResolveResult
+      setResolvedResult(data)
+      setExtraMarkdownDirs(prev => Array.from(new Set([...prev, ...data.directories])))
+      setExtraFilePaths(prev => Array.from(new Set([...prev, ...data.files.map(file => file.path)])))
+      setIncludedPaths(prev => new Set([...Array.from(prev), ...data.files.map(file => file.path)]))
+    } finally {
+      setResolveLoading(false)
+    }
+  }
+
+  const addSearchDir = () => {
+    const dir = searchDirInput.trim()
+    if (!dir) return
+    setExtraMarkdownDirs(prev => Array.from(new Set([...prev, dir])))
+    setSearchDirInput('')
+  }
+
+  const removeSearchDir = (dir: string) => {
+    setExtraMarkdownDirs(prev => prev.filter(item => item !== dir))
+  }
+
   const submit = async (approved: boolean) => {
+    if (!payload) return
     setSubmitting(true)
+    await postPageStatus('submitted')
+
+    const visibleIncludedFileIds = (payload.files ?? [])
+      .filter(file => includedPaths.has(file.path))
+      .map(file => file.id)
     const compressionDecisions = Object.fromEntries(Array.from(compressionDecisionMap.entries()))
     const disregardedFileIds = Array.from(compressionDecisionMap.entries())
       .filter(([, decision]) => decision === 'disregard')
       .map(([fileId]) => fileId)
     const modificationReview = Object.fromEntries(Array.from(modAcceptMap.entries()))
+    const persistedIncludedPaths = Array.from(includedPaths).sort()
+    const persistedDirectoryPaths = Array.from(new Set(extraMarkdownDirs)).sort()
+
+    await fetch('/api/memory/preferences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        includedPaths: persistedIncludedPaths,
+        includedDirectories: persistedDirectoryPaths,
+      }),
+    })
 
     await fetch(`/api/sessions/${id}/complete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         approved,
-        includedFileIds: Array.from(includedFileIds),
+        includedFileIds: visibleIncludedFileIds,
+        includedFilePaths: persistedIncludedPaths,
         disregardedFileIds,
         compressionDecisions,
         modificationReview,
+        persistedIncludedPaths,
+        persistedDirectoryPaths,
+        pageStatus: { state: pageState, updatedAt: Date.now() },
         globalNote: globalNote || undefined,
       }),
     })
@@ -528,36 +633,143 @@ export default function MemoryReviewPage() {
     navigate('/')
   }
 
-  if (fetchError) return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex items-center justify-center">
-      <p className="text-red-500 text-sm">Unable to load memory review session.</p>
-    </div>
-  )
+  if (fetchError) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex items-center justify-center">
+        <p className="text-red-500 text-sm">Unable to load memory review session.</p>
+      </div>
+    )
+  }
 
-  if (loading) return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex items-center justify-center">
-      <p className="text-zinc-400 dark:text-slate-500">Loading...</p>
-    </div>
-  )
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex items-center justify-center">
+        <p className="text-zinc-400 dark:text-slate-500">Loading...</p>
+      </div>
+    )
+  }
 
-  if (!payload) return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex items-center justify-center">
-      <p className="text-red-500 text-sm">Session not found.</p>
-    </div>
-  )
+  if (!payload) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex items-center justify-center">
+        <p className="text-red-500 text-sm">Session not found.</p>
+      </div>
+    )
+  }
 
-  if (submitted) return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex items-center justify-center">
-      <p className="text-zinc-700 dark:text-slate-200">Submitted.</p>
-    </div>
-  )
+  if (submitted) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex items-center justify-center">
+        <p className="text-zinc-700 dark:text-slate-200">Submitted.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-zinc-950">
       <div className="max-w-7xl mx-auto py-8 px-4">
         <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider mb-1">Memory Review</p>
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-slate-100">{payload.title}</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-semibold text-zinc-900 dark:text-slate-100">{payload.title}</h1>
+          <span className="text-[11px] px-2 py-1 rounded-full border border-gray-200 dark:border-zinc-700 text-zinc-500 dark:text-slate-400">
+            page: {pageState}
+          </span>
+          {catalogRefreshing && <span className="text-[11px] text-blue-500">refreshing catalog...</span>}
+        </div>
         {payload.description && <p className="text-sm text-zinc-500 dark:text-slate-400 mt-1">{payload.description}</p>}
+
+        <div className="mt-4 grid grid-cols-1 xl:grid-cols-[1.2fr_.8fr] gap-4">
+          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-4">
+            <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider">Include Markdown By Text</p>
+            <p className="text-sm text-zinc-500 dark:text-slate-400 mt-1">Enter markdown file paths or directories. Matching files will be added to this review and persisted as memory preferences after approval.</p>
+            <textarea
+              className="mt-3 w-full min-h-28 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300"
+              value={memoryInput}
+              onChange={e => setMemoryInput(e.target.value)}
+              placeholder={'docs/notes\nMEMORY.md\n../shared-docs'}
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                onClick={resolveInput}
+                disabled={resolveLoading || !memoryInput.trim()}
+                className="px-3 py-2 rounded-lg text-sm font-medium bg-zinc-900 dark:bg-slate-100 text-white dark:text-slate-900 disabled:opacity-50"
+              >
+                {resolveLoading ? 'Resolving...' : 'Resolve Markdown Input'}
+              </button>
+              {resolvedResult && (
+                <span className="text-xs text-zinc-500 dark:text-slate-400">
+                  {resolvedResult.files.length} files, {resolvedResult.directories.length} directories
+                </span>
+              )}
+            </div>
+            {resolvedResult && (
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="rounded-lg border border-gray-200 dark:border-zinc-700 p-3">
+                  <p className="text-xs font-medium text-zinc-600 dark:text-slate-300">Resolved Files</p>
+                  <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
+                    {resolvedResult.files.map(file => (
+                      <button
+                        key={file.path}
+                        onClick={() => {
+                          const fileId = pathToFileId.get(file.path) ?? pathToFileId.get(file.relativePath)
+                          if (fileId) setSelectedFileId(fileId)
+                        }}
+                        className="block w-full text-left text-[11px] font-mono px-2 py-1 rounded hover:bg-gray-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-slate-300"
+                      >
+                        {file.relativePath}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-gray-200 dark:border-zinc-700 p-3">
+                  <p className="text-xs font-medium text-zinc-600 dark:text-slate-300">Ignored Input</p>
+                  <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
+                    {resolvedResult.ignoredInputs.length > 0 ? resolvedResult.ignoredInputs.map(value => (
+                      <div key={value} className="text-[11px] font-mono text-red-500 px-2 py-1">{value}</div>
+                    )) : <p className="text-[11px] text-zinc-500 dark:text-slate-400 px-2 py-1">All input resolved.</p>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-4">
+            <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider">Search Markdown</p>
+            <div className="mt-3 flex gap-2">
+              <input
+                className="flex-1 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search file path, preview, or section title"
+              />
+            </div>
+            <div className="mt-3 flex gap-2">
+              <input
+                className="flex-1 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300"
+                value={searchDirInput}
+                onChange={e => setSearchDirInput(e.target.value)}
+                placeholder="Add markdown directory to search"
+              />
+              <button
+                onClick={addSearchDir}
+                className="px-3 py-2 rounded-lg text-sm border border-gray-200 dark:border-zinc-700 text-zinc-700 dark:text-slate-300"
+              >
+                Add Dir
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {extraMarkdownDirs.map(dir => (
+                <button
+                  key={dir}
+                  onClick={() => removeSearchDir(dir)}
+                  className="text-[11px] font-mono px-2 py-1 rounded-full border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300"
+                >
+                  {dir} ×
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
 
         <div className="mt-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-3">
           <div className="flex items-center justify-between mb-2">
@@ -603,12 +815,7 @@ export default function MemoryReviewPage() {
           <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-3">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-medium text-zinc-800 dark:text-slate-200">Memory Mindgraph</p>
-              <button
-                className="text-xs text-blue-500 hover:text-blue-600"
-                onClick={() => setCollapsedIds(new Set())}
-              >
-                Expand All
-              </button>
+              <button className="text-xs text-blue-500 hover:text-blue-600" onClick={() => setCollapsedIds(new Set())}>Expand All</button>
             </div>
             <div className="space-y-2">
               {payload.groups.map(group => {
@@ -641,17 +848,10 @@ export default function MemoryReviewPage() {
                                   : 'border-gray-100 dark:border-zinc-800'
                             }`}>
                               <div className="flex items-center gap-1 px-2 py-1">
-                                <button
-                                  onClick={() => toggleCollapse(fileNodeId)}
-                                  className="text-xs text-zinc-400 dark:text-slate-500"
-                                >
+                                <button onClick={() => toggleCollapse(fileNodeId)} className="text-xs text-zinc-400 dark:text-slate-500">
                                   {fileCollapsed ? '▸' : '▾'}
                                 </button>
-                                <input
-                                  type="checkbox"
-                                  checked={includedFileIds.has(file.id)}
-                                  onChange={() => toggleInclude(file.id)}
-                                />
+                                <input type="checkbox" checked={includedPaths.has(file.path)} onChange={() => toggleInclude(file.path)} />
                                 <button
                                   onClick={() => setSelectedFileId(file.id)}
                                   className="text-left flex-1 text-xs font-mono text-zinc-700 dark:text-slate-300 truncate"
@@ -661,8 +861,10 @@ export default function MemoryReviewPage() {
                                 </button>
                               </div>
                               {!fileCollapsed && (
-                                <div className="px-7 pb-1 space-y-1">
+                                <div className="px-7 pb-2 space-y-1">
                                   <div className="flex gap-1 flex-wrap">
+                                    {file.pinnedByPreference && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">pinned</span>}
+                                    {file.matchedBySearch && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300">search</span>}
                                     {file.categories.map(cat => (
                                       <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-slate-400">{cat}</span>
                                     ))}
@@ -684,15 +886,15 @@ export default function MemoryReviewPage() {
           </div>
 
           <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-4">
-            {!selectedFile && (
-              <p className="text-sm text-zinc-500 dark:text-slate-400">Select a memory file node to inspect details.</p>
-            )}
-
+            {!selectedFile && <p className="text-sm text-zinc-500 dark:text-slate-400">Select a memory file node to inspect details.</p>}
             {selectedFile && (
               <>
                 <div className="mb-3">
                   <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase">Selected File</p>
-                  <h2 className="text-sm font-mono text-zinc-800 dark:text-slate-200 break-all">{selectedFile.path}</h2>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <h2 className="text-sm font-mono text-zinc-800 dark:text-slate-200 break-all">{selectedFile.path}</h2>
+                    {selectedFile.pinnedByPreference && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">pinned preference</span>}
+                  </div>
                   <p className="text-xs text-zinc-500 dark:text-slate-400 mt-1">
                     {formatBytes(selectedFile.size)} · updated {selectedFile.lastModified ? new Date(selectedFile.lastModified).toLocaleString() : 'unknown'}
                   </p>
@@ -701,6 +903,13 @@ export default function MemoryReviewPage() {
                 <div className="mb-4">
                   <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase mb-1">Preview</p>
                   <p className="text-sm text-zinc-600 dark:text-slate-300">{selectedFile.preview || 'No preview.'}</p>
+                </div>
+
+                <div className="mb-4">
+                  <label className="inline-flex items-center gap-2 text-sm text-zinc-700 dark:text-slate-300">
+                    <input type="checkbox" checked={includedPaths.has(selectedFile.path)} onChange={() => toggleInclude(selectedFile.path)} />
+                    Keep this file included in future memory reviews
+                  </label>
                 </div>
 
                 <div className="mb-4">
@@ -768,13 +977,7 @@ export default function MemoryReviewPage() {
                             {diffLines.map((line, idx) => (
                               <tr
                                 key={`${line.type}-${idx}`}
-                                className={
-                                  line.type === 'add'
-                                    ? 'bg-green-50 dark:bg-green-950'
-                                    : line.type === 'remove'
-                                      ? 'bg-red-50 dark:bg-red-950'
-                                      : ''
-                                }
+                                className={line.type === 'add' ? 'bg-green-50 dark:bg-green-950' : line.type === 'remove' ? 'bg-red-50 dark:bg-red-950' : ''}
                                 style={{
                                   borderLeft: line.type === 'add'
                                     ? '3px solid rgba(34,197,94,.8)'
@@ -784,26 +987,22 @@ export default function MemoryReviewPage() {
                                 }}
                               >
                                 <td className="w-8 text-right px-2 py-0.5 text-zinc-400 dark:text-slate-500 select-none">{idx + 1}</td>
-                                <td
-                                  className={`w-5 px-1 py-0.5 text-center font-bold ${
-                                    line.type === 'add'
-                                      ? 'text-green-700 dark:text-green-300'
-                                      : line.type === 'remove'
-                                        ? 'text-red-700 dark:text-red-300'
-                                        : 'text-zinc-400 dark:text-slate-500'
-                                  }`}
-                                >
+                                <td className={`w-5 px-1 py-0.5 text-center font-bold ${
+                                  line.type === 'add'
+                                    ? 'text-green-700 dark:text-green-300'
+                                    : line.type === 'remove'
+                                      ? 'text-red-700 dark:text-red-300'
+                                      : 'text-zinc-400 dark:text-slate-500'
+                                }`}>
                                   {line.type === 'add' ? '+' : line.type === 'remove' ? '−' : ' '}
                                 </td>
-                                <td
-                                  className={`px-2 py-0.5 whitespace-pre-wrap break-words ${
-                                    line.type === 'add'
-                                      ? 'text-green-700 dark:text-green-300'
-                                      : line.type === 'remove'
-                                        ? 'text-red-700 dark:text-red-300'
-                                        : 'text-zinc-600 dark:text-slate-400'
-                                  }`}
-                                >
+                                <td className={`px-2 py-0.5 whitespace-pre-wrap break-words ${
+                                  line.type === 'add'
+                                    ? 'text-green-700 dark:text-green-300'
+                                    : line.type === 'remove'
+                                      ? 'text-red-700 dark:text-red-300'
+                                      : 'text-zinc-600 dark:text-slate-400'
+                                }`}>
                                   {line.text}
                                 </td>
                               </tr>
@@ -834,14 +1033,14 @@ export default function MemoryReviewPage() {
           <button
             onClick={() => submit(true)}
             disabled={submitting}
-            className="flex-1 bg-zinc-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium py-2.5 rounded-lg"
+            className="flex-1 bg-zinc-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium py-2.5 rounded-lg disabled:opacity-50"
           >
             Approve Memory Review
           </button>
           <button
             onClick={() => submit(false)}
             disabled={submitting}
-            className="px-5 text-sm text-red-500 border border-red-200 dark:border-red-800 rounded-lg"
+            className="px-5 text-sm text-red-500 border border-red-200 dark:border-red-800 rounded-lg disabled:opacity-50"
           >
             Reject
           </button>

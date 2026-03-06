@@ -6,13 +6,15 @@ import { existsSync, readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { learnFromDeletions, learnFromTrajectoryRevisions, getLearnedPreferences, clearPreferences, deletePreference } from './preference.js'
-import { createSession, getSession, listSessions, completeSession, setSessionRewriting, updateSessionPayload } from './store.js'
+import { createSession, getSession, listSessions, completeSession, setSessionRewriting, updateSessionPageStatus, updateSessionPayload } from './store.js'
 import {
   buildMemoryCatalog,
   buildMemoryReviewPayload,
   includeMemoryFileInContext,
+  resolveMemoryInput,
   readMemoryFileContent,
   removeMemoryFileFromContext,
+  updateMemoryPreferences,
 } from './memory.js'
 
 const app = express()
@@ -56,6 +58,14 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
   } finally {
     clearTimeout(timer)
   }
+}
+
+function createSessionId(): string {
+  let id = ''
+  do {
+    id = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  } while (getSession(id))
+  return id
 }
 
 // Lightweight identity endpoint so clients can verify the service is AgentClick.
@@ -199,13 +209,14 @@ app.post('/api/review', async (req, res) => {
   }
 
   const now = Date.now()
-  const id = `session_${now}`
+  const id = createSessionId()
   createSession({
     id,
     type: type || 'email_review',
     payload,
     sessionKey,
     status: 'pending',
+    pageStatus: { state: 'created', updatedAt: now },
     createdAt: now,
     updatedAt: now,
     revision: 0,
@@ -245,15 +256,28 @@ app.get('/api/memory/files', (req, res) => {
   const currentContextFiles = typeof req.query.currentContextFiles === 'string'
     ? req.query.currentContextFiles.split(',').map(v => v.trim()).filter(Boolean)
     : undefined
-  const catalog = buildMemoryCatalog({ projectRoot, currentContextFiles })
+  const extraMarkdownDirs = typeof req.query.extraMarkdownDirs === 'string'
+    ? req.query.extraMarkdownDirs.split(',').map(v => v.trim()).filter(Boolean)
+    : undefined
+  const extraFilePaths = typeof req.query.extraFilePaths === 'string'
+    ? req.query.extraFilePaths.split(',').map(v => v.trim()).filter(Boolean)
+    : undefined
+  const searchQuery = typeof req.query.search === 'string' ? req.query.search : undefined
+  const catalog = buildMemoryCatalog({ projectRoot, currentContextFiles, extraMarkdownDirs, extraFilePaths, searchQuery })
   res.json(catalog)
 })
 
 app.get('/api/memory/file', (req, res) => {
   const projectRoot = join(__dirname, '../../..')
   const filePath = typeof req.query.path === 'string' ? req.query.path : ''
+  const extraMarkdownDirs = typeof req.query.extraMarkdownDirs === 'string'
+    ? req.query.extraMarkdownDirs.split(',').map(v => v.trim()).filter(Boolean)
+    : undefined
+  const extraFilePaths = typeof req.query.extraFilePaths === 'string'
+    ? req.query.extraFilePaths.split(',').map(v => v.trim()).filter(Boolean)
+    : undefined
   if (!filePath) return res.status(400).json({ error: 'Missing path query' })
-  const file = readMemoryFileContent({ projectRoot, filePath })
+  const file = readMemoryFileContent({ projectRoot, filePath, extraMarkdownDirs, extraFilePaths })
   if (!file) return res.status(404).json({ error: 'File not found in memory catalog' })
   res.json(file)
 })
@@ -262,7 +286,8 @@ app.post('/api/memory/include', (req, res) => {
   const projectRoot = join(__dirname, '../../..')
   const filePath = typeof req.body?.path === 'string' ? req.body.path : ''
   if (!filePath) return res.status(400).json({ error: 'Missing path in request body' })
-  const result = includeMemoryFileInContext({ projectRoot, filePath })
+  const persist = req.body?.persist !== false
+  const result = includeMemoryFileInContext({ projectRoot, filePath, persist })
   if (!result.ok) return res.status(404).json({ error: 'File not found in memory catalog' })
   res.json(result)
 })
@@ -276,23 +301,46 @@ app.post('/api/memory/exclude', (req, res) => {
   res.json(result)
 })
 
+app.post('/api/memory/resolve', (req, res) => {
+  const projectRoot = join(__dirname, '../../..')
+  const rawInput = typeof req.body?.input === 'string' ? req.body.input : ''
+  if (!rawInput.trim()) return res.status(400).json({ error: 'Missing input in request body' })
+  res.json(resolveMemoryInput({ projectRoot, rawInput }))
+})
+
+app.post('/api/memory/preferences', (req, res) => {
+  const projectRoot = join(__dirname, '../../..')
+  const includedPaths = Array.isArray(req.body?.includedPaths)
+    ? req.body.includedPaths.filter((value: unknown): value is string => typeof value === 'string')
+    : undefined
+  const includedDirectories = Array.isArray(req.body?.includedDirectories)
+    ? req.body.includedDirectories.filter((value: unknown): value is string => typeof value === 'string')
+    : undefined
+  const result = updateMemoryPreferences({ projectRoot, includedPaths, includedDirectories })
+  res.json(result)
+})
+
 app.post('/api/memory/review/create', async (req, res) => {
-  const { sessionKey, noOpen, openHome, currentContextFiles, generatedContent } = req.body ?? {}
+  const { sessionKey, noOpen, openHome, currentContextFiles, generatedContent, extraMarkdownDirs, extraFilePaths, searchQuery } = req.body ?? {}
   const projectRoot = join(__dirname, '../../..')
   const payload = buildMemoryReviewPayload({
     projectRoot,
     currentContextFiles: Array.isArray(currentContextFiles) ? currentContextFiles : undefined,
     generatedContent: typeof generatedContent === 'string' ? generatedContent : undefined,
+    extraMarkdownDirs: Array.isArray(extraMarkdownDirs) ? extraMarkdownDirs : undefined,
+    extraFilePaths: Array.isArray(extraFilePaths) ? extraFilePaths : undefined,
+    searchQuery: typeof searchQuery === 'string' ? searchQuery : undefined,
   })
 
   const now = Date.now()
-  const id = `session_${now}`
+  const id = createSessionId()
   createSession({
     id,
     type: 'memory_review',
     payload,
     sessionKey,
     status: 'pending',
+    pageStatus: { state: 'created', updatedAt: now },
     createdAt: now,
     updatedAt: now,
     revision: 0,
@@ -333,13 +381,14 @@ app.post('/api/review/batch', (req, res) => {
       console.warn('[agentclick] Warning: sessionKey missing in batch item — callback will be skipped')
     }
     const now = Date.now()
-    const id = `session_${now}_${Math.random().toString(36).slice(2, 7)}`
+    const id = createSessionId()
     createSession({
       id,
       type: type || 'email_review',
       payload,
       sessionKey,
       status: 'pending',
+      pageStatus: { state: 'created', updatedAt: now },
       createdAt: now,
       updatedAt: now,
       revision: 0,
@@ -400,7 +449,18 @@ app.get('/api/sessions/:id', (req, res) => {
   res.json(session)
 })
 
-// Mock summary endpoint for inbox items (UI integration first)
+app.post('/api/sessions/:id/page-status', (req, res) => {
+  const session = getSession(req.params.id)
+  if (!session) return res.status(404).json({ error: 'Session not found' })
+  const state = typeof req.body?.state === 'string' ? req.body.state : ''
+  if (!['opened', 'active', 'hidden', 'submitted'].includes(state)) {
+    return res.status(400).json({ error: 'Invalid page status state' })
+  }
+  const pageStatus = { state: state as 'opened' | 'active' | 'hidden' | 'submitted', updatedAt: Date.now() }
+  updateSessionPageStatus(req.params.id, pageStatus)
+  res.json({ ok: true, pageStatus })
+})
+
 app.get('/api/sessions/:id/summary', (req, res) => {
   const session = getSession(req.params.id)
   if (!session) return res.status(404).json({ error: 'Session not found' })
@@ -414,30 +474,58 @@ app.get('/api/sessions/:id/summary', (req, res) => {
     return res.status(404).json({ error: 'Email not found in session' })
   }
 
-  const preview = String(email.preview ?? '')
-  const summaryText = preview.length > 0
-    ? `This email appears to be about: ${preview}`
-    : 'No preview text is available for this email yet.'
+  const preview = String(email.preview ?? '').trim()
+  const structuredSummary = email.summary as string | Record<string, unknown> | undefined
 
-  const from = String(email.from ?? 'Unknown sender')
-  const category = String(email.category ?? 'Unknown')
+  let summaryText = ''
+  let bullets: string[] = []
+  let confidence = 'heuristic'
+
+  if (typeof structuredSummary === 'string' && structuredSummary.trim().length > 0) {
+    summaryText = structuredSummary.trim()
+    confidence = 'agent'
+  } else if (structuredSummary && typeof structuredSummary === 'object') {
+    const fromObject = structuredSummary as Record<string, unknown>
+    const candidateSummary = typeof fromObject.summary === 'string' ? fromObject.summary.trim() : ''
+    const candidateBullets = Array.isArray(fromObject.bullets)
+      ? fromObject.bullets.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : []
+    const candidateConfidence = typeof fromObject.confidence === 'string' ? fromObject.confidence : ''
+    if (candidateSummary) summaryText = candidateSummary
+    if (candidateBullets.length > 0) bullets = candidateBullets
+    if (candidateConfidence) confidence = candidateConfidence
+    if (candidateSummary) confidence = 'agent'
+  }
+
+  if (!summaryText) {
+    summaryText = preview.length > 0
+      ? preview.slice(0, 280)
+      : 'No preview text is available for this email yet.'
+  }
+
+  if (bullets.length === 0) {
+    const from = String(email.from ?? 'Unknown sender')
+    const category = String(email.category ?? 'Unknown')
+    const subject = String(email.subject ?? 'No subject')
+    bullets = [
+      `From: ${from}`,
+      `Category: ${category}`,
+      `Subject: ${subject}`,
+    ]
+  }
 
   res.json({
     emailId,
     summary: summaryText,
-    bullets: [
-      `From: ${from}`,
-      `Category: ${category}`,
-      'Source: mock summary endpoint (replace with agent summary later)',
-    ],
-    confidence: 'mock',
+    bullets,
+    confidence,
   })
 })
 
 // Long-poll: agent calls this and blocks until user completes review (up to 5 min)
 app.get('/api/sessions/:id/wait', async (req, res) => {
   const TIMEOUT_MS = 5 * 60 * 1000
-  const POLL_MS = 1500
+  const POLL_MS = 500
   const start = Date.now()
 
   while (Date.now() - start < TIMEOUT_MS) {
@@ -495,12 +583,14 @@ app.post('/api/sessions/:id/complete', async (req, res) => {
   // If user requested regeneration, set to rewriting (not completed) so agent can update
   if (req.body.regenerate) {
     setSessionRewriting(req.params.id, req.body)
+    updateSessionPageStatus(req.params.id, { state: 'submitted', updatedAt: Date.now() })
     console.log(`[agentclick] Session ${session.id} → rewriting:`, JSON.stringify(req.body, null, 2))
     res.json({ ok: true, rewriting: true })
     return
   }
 
   completeSession(req.params.id, req.body)
+  updateSessionPageStatus(req.params.id, { state: 'submitted', updatedAt: Date.now() })
 
   console.log(`[agentclick] Session ${session.id} completed:`, JSON.stringify(req.body, null, 2))
 
@@ -558,6 +648,31 @@ function buildActionSummary(result: Record<string, unknown>): string {
     if (wrong.length > 0) lines.push(`- Marked ${wrong.length} step(s) as wrong: ${wrong.map(r => `${r.stepId}${r.correction ? ` — "${r.correction}"` : ''}`).join(', ')}`)
     if (guided.length > 0) lines.push(`- Guidance for ${guided.length} step(s): ${guided.map(r => `${r.stepId} — "${r.guidance}"`).join(', ')}`)
     if (resumeFromStep) lines.push(`- Resume from step: ${resumeFromStep}`)
+    if (globalNote) lines.push(`- Note: ${globalNote}`)
+    return lines.join('\n')
+  }
+
+  if ('includedFileIds' in result || 'persistedIncludedPaths' in result || 'persistedDirectoryPaths' in result) {
+    const approved = result.approved as boolean
+    const globalNote = result.globalNote as string | undefined
+    const includedFileIds = Array.isArray(result.includedFileIds) ? result.includedFileIds.length : 0
+    const disregardedFileIds = Array.isArray(result.disregardedFileIds) ? result.disregardedFileIds.length : 0
+    const persistedIncludedPaths = Array.isArray(result.persistedIncludedPaths)
+      ? result.persistedIncludedPaths.filter((item): item is string => typeof item === 'string')
+      : []
+    const persistedDirectoryPaths = Array.isArray(result.persistedDirectoryPaths)
+      ? result.persistedDirectoryPaths.filter((item): item is string => typeof item === 'string')
+      : []
+    const pageStatus = result.pageStatus && typeof result.pageStatus === 'object'
+      ? result.pageStatus as Record<string, unknown>
+      : undefined
+    const lines = ['[agentclick] User reviewed memory sources:']
+    lines.push(approved ? '- Approved: proceed.' : '- Rejected: do not proceed.')
+    lines.push(`- Included files in context: ${includedFileIds}`)
+    lines.push(`- Disregarded files after compression: ${disregardedFileIds}`)
+    if (persistedIncludedPaths.length > 0) lines.push(`- Persisted pinned files: ${persistedIncludedPaths.join(', ')}`)
+    if (persistedDirectoryPaths.length > 0) lines.push(`- Persisted markdown directories: ${persistedDirectoryPaths.join(', ')}`)
+    if (pageStatus?.state) lines.push(`- Page status before submit: ${String(pageStatus.state)}`)
     if (globalNote) lines.push(`- Note: ${globalNote}`)
     return lines.join('\n')
   }
