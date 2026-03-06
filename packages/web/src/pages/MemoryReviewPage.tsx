@@ -773,7 +773,7 @@ export default function MemoryReviewPage() {
 
         <div className="mt-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-3">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider">Modified Files (Mind Map)</p>
+            <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider">Modified Files</p>
             <span className="text-xs text-zinc-500 dark:text-slate-400">{changedFiles.length} changed</span>
           </div>
           {changedFiles.length > 0 ? (
@@ -814,7 +814,7 @@ export default function MemoryReviewPage() {
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4">
           <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-3">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-zinc-800 dark:text-slate-200">Memory Mindgraph</p>
+              <p className="text-sm font-medium text-zinc-800 dark:text-slate-200">Memory Files</p>
               <button className="text-xs text-blue-500 hover:text-blue-600" onClick={() => setCollapsedIds(new Set())}>Expand All</button>
             </div>
             <div className="space-y-2">
@@ -847,17 +847,35 @@ export default function MemoryReviewPage() {
                                   ? 'border-amber-200 dark:border-amber-800'
                                   : 'border-gray-100 dark:border-zinc-800'
                             }`}>
-                              <div className="flex items-center gap-1 px-2 py-1">
+                              <div className="flex items-start gap-1 px-2 py-1.5">
                                 <button onClick={() => toggleCollapse(fileNodeId)} className="text-xs text-zinc-400 dark:text-slate-500">
                                   {fileCollapsed ? '▸' : '▾'}
                                 </button>
                                 <input type="checkbox" checked={includedPaths.has(file.path)} onChange={() => toggleInclude(file.path)} />
                                 <button
                                   onClick={() => setSelectedFileId(file.id)}
-                                  className="text-left flex-1 text-xs font-mono text-zinc-700 dark:text-slate-300 truncate"
+                                  className={`text-left flex-1 min-w-0 rounded px-1 py-0.5 hover:bg-gray-50 dark:hover:bg-zinc-800 ${
+                                    selected ? 'bg-blue-50 dark:bg-blue-950' : ''
+                                  }`}
                                   title={file.path}
                                 >
-                                  {changedFileIds.has(file.id) ? `M ${file.relativePath}` : file.relativePath}
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    {changedFileIds.has(file.id) && (
+                                      <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
+                                        M
+                                      </span>
+                                    )}
+                                    <span className={`text-xs font-mono truncate ${
+                                      changedFileIds.has(file.id)
+                                        ? 'text-amber-700 dark:text-amber-300'
+                                        : 'text-zinc-700 dark:text-slate-300'
+                                    }`}>
+                                      {file.relativePath}
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 text-[11px] text-zinc-500 dark:text-slate-400 truncate">
+                                    {file.preview || 'No preview.'}
+                                  </div>
                                 </button>
                               </div>
                               {!fileCollapsed && (
@@ -870,7 +888,13 @@ export default function MemoryReviewPage() {
                                     ))}
                                   </div>
                                   {file.sections.slice(0, 8).map(sec => (
-                                    <div key={sec.id} className="text-[11px] text-zinc-500 dark:text-slate-400 truncate"># {sec.title}</div>
+                                    <button
+                                      key={sec.id}
+                                      onClick={() => setSelectedFileId(file.id)}
+                                      className="block w-full text-left text-[11px] text-zinc-500 dark:text-slate-400 truncate hover:text-zinc-700 dark:hover:text-slate-200"
+                                    >
+                                      # {sec.title}
+                                    </button>
                                   ))}
                                 </div>
                               )}
@@ -923,25 +947,27 @@ export default function MemoryReviewPage() {
 
                 <div className="mb-4">
                   <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase mb-1">Compression Decision</p>
-                  <div className="flex gap-3">
-                    <label className="text-sm text-zinc-700 dark:text-slate-300">
-                      <input
-                        className="mr-1"
-                        type="radio"
-                        checked={(compressionDecisionMap.get(selectedFile.id) ?? 'include') === 'include'}
-                        onChange={() => setCompressionDecisionMap(prev => new Map(prev).set(selectedFile.id, 'include'))}
-                      />
-                      include
-                    </label>
-                    <label className="text-sm text-zinc-700 dark:text-slate-300">
-                      <input
-                        className="mr-1"
-                        type="radio"
-                        checked={(compressionDecisionMap.get(selectedFile.id) ?? 'include') === 'disregard'}
-                        onChange={() => setCompressionDecisionMap(prev => new Map(prev).set(selectedFile.id, 'disregard'))}
-                      />
-                      disregard
-                    </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setCompressionDecisionMap(prev => new Map(prev).set(selectedFile.id, 'include'))}
+                      className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                        (compressionDecisionMap.get(selectedFile.id) ?? 'include') === 'include'
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                          : 'border-gray-200 bg-white text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-slate-300'
+                      }`}
+                    >
+                      Include
+                    </button>
+                    <button
+                      onClick={() => setCompressionDecisionMap(prev => new Map(prev).set(selectedFile.id, 'disregard'))}
+                      className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                        (compressionDecisionMap.get(selectedFile.id) ?? 'include') === 'disregard'
+                          ? 'border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300'
+                          : 'border-gray-200 bg-white text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-slate-300'
+                      }`}
+                    >
+                      Disregard
+                    </button>
                   </div>
                   {payload.compressionRecommendations.find(r => r.fileId === selectedFile.id)?.reason && (
                     <p className="text-xs text-zinc-500 dark:text-slate-400 mt-1">
