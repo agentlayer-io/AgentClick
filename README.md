@@ -23,10 +23,10 @@ AI agents fail silently and take irreversible actions. AgentClick puts a human r
 ```bash
 npm install -g @harvenstar/agentclick
 agentclick              # local only
-agentclick --tunnel     # + public URL for phone / remote access
+agentclick --remote     # + public URL for phone / remote access
 ```
 
-`--tunnel` automatically downloads and starts a [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) — no account needed. A public HTTPS URL is printed in the terminal; open it on any device.
+`--remote` automatically downloads and starts a [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) — no account needed. A public HTTPS URL is printed in the terminal; open it on any device.
 
 Then test it with a mock session:
 

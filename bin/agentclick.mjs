@@ -35,14 +35,14 @@ Usage:
   agentclick [options]
 
 Options:
-  --tunnel        Start a cloudflared tunnel for phone/remote access (no account needed)
-  --no-tunnel     Skip tunnel
+  --remote        Start a cloudflared tunnel for phone/remote access (no account needed)
+  --no-remote     Skip tunnel
   --version, -v   Show version number
   --help, -h      Show this help message
 
 Examples:
   agentclick                Start the server (local only)
-  agentclick --tunnel       Start with a public tunnel URL for phone access
+  agentclick --remote       Start with a public tunnel URL for phone access
   AGENTCLICK_PORT=4000 agentclick    Start on a specific port
 
 Environment:
@@ -58,8 +58,8 @@ function parseArgs(argv) {
     const arg = argv[i]
     if (arg === '--help' || arg === '-h') { printHelp(); process.exit(0) }
     if (arg === '--version' || arg === '-v') { console.log(readVersion()); process.exit(0) }
-    if (arg === '--tunnel') { tunnelEnabled = true; continue }
-    if (arg === '--no-tunnel') { tunnelEnabled = false; continue }
+    if (arg === '--remote') { tunnelEnabled = true; continue }
+    if (arg === '--no-remote') { tunnelEnabled = false; continue }
     console.error(`[agentclick] Unknown argument: ${arg}`)
     console.error('[agentclick] Run "agentclick --help" for usage.')
     process.exit(1)
