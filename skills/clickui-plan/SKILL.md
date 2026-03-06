@@ -1,5 +1,5 @@
 ---
-name: clawui-plan
+name: clickui-plan
 description: Submit an execution plan for human review and approval before executing
 ---
 

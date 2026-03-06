@@ -1,9 +1,9 @@
 ---
-name: clawui-code
+name: clickui-code
 description: Use this skill when you want to run a shell command that could be destructive or irreversible and need user confirmation first.
 ---
 
-# ClawUI Code Review
+# ClickUI Code Review
 
 Before running risky shell commands, get user approval via this skill. Always show the user exactly which files will change and what the diffs look like — this is the default, not optional.
 

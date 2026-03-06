@@ -1,5 +1,5 @@
 ---
-name: clawui-trajectory
+name: clickui-trajectory
 description: Submit an agent execution trajectory for human review, correction, and learning
 ---
 
@@ -149,7 +149,7 @@ The human's response is returned via `/api/sessions/:id/wait`:
 When a human marks a step wrong with "Remember this for future runs" checked, a rule is written to `~/.openclaw/workspace/MEMORY.md`:
 
 ```markdown
-## Trajectory Guidance (ClawUI Auto-Learned)
+## Trajectory Guidance (ClickUI Auto-Learned)
 - AVOID: Should check VPN before SSH (step: s3, context: SSH to staging server) - SCOPE: trajectory
 - PREFER: Always verify VPN is connected before attempting SSH (step: s3, context: SSH to staging server) - SCOPE: trajectory
 ```

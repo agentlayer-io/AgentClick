@@ -3,8 +3,8 @@ import path from 'path'
 import os from 'os'
 
 const MEMORY_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'MEMORY.md')
-const SECTION_HEADER = '## Email Preferences (ClawUI Auto-Learned)'
-const TRAJECTORY_SECTION_HEADER = '## Trajectory Guidance (ClawUI Auto-Learned)'
+const SECTION_HEADER = '## Email Preferences (ClickUI Auto-Learned)'
+const TRAJECTORY_SECTION_HEADER = '## Trajectory Guidance (ClickUI Auto-Learned)'
 
 interface Paragraph {
   id: string
@@ -44,7 +44,7 @@ function ensureMemoryFile(): void {
     fs.mkdirSync(dir, { recursive: true })
   }
   if (!fs.existsSync(MEMORY_PATH)) {
-    fs.writeFileSync(MEMORY_PATH, '# ClawUI Learned Preferences\n', 'utf-8')
+    fs.writeFileSync(MEMORY_PATH, '# ClickUI Learned Preferences\n', 'utf-8')
   }
 }
 

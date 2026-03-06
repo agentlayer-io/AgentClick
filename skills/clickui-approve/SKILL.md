@@ -1,9 +1,9 @@
 ---
-name: clawui-approve
+name: clickui-approve
 description: Use this skill when you are about to take a consequential or irreversible action and need explicit user approval before proceeding.
 ---
 
-# ClawUI Action Approval
+# ClickUI Action Approval
 
 When you are about to take a high-risk action (sending messages, deleting data, calling external APIs), use these steps.
 

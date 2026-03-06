@@ -4,7 +4,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 
 const DB_DIR = join(homedir(), '.openclaw')
-const DB_PATH = join(DB_DIR, 'clawui-sessions.db')
+const DB_PATH = join(DB_DIR, 'clickui-sessions.db')
 
 if (!existsSync(DB_DIR)) mkdirSync(DB_DIR, { recursive: true })
 

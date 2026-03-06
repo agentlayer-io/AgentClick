@@ -1,9 +1,9 @@
 ---
-name: clawui-email
+name: clickui-email
 description: Use this skill when you have finished writing an email draft and need the user to review it before sending.
 ---
 
-# ClawUI Email Review
+# ClickUI Email Review
 
 ## Trigger Conditions (high priority)
 
@@ -142,7 +142,7 @@ Rewrite rules:
 Write the payload to a temp file (required for stability with special characters), then PUT:
 
 ```bash
-cat > /tmp/clawui_payload.json <<'JSON'
+cat > /tmp/clickui_payload.json <<'JSON'
 {
   "payload": {
     "inbox": [SAME_INBOX_AS_SUBMITTED],
@@ -160,12 +160,12 @@ cat > /tmp/clawui_payload.json <<'JSON'
 }
 JSON
 
-HTTP_CODE=$(curl -s -o /tmp/clawui_put_response.txt -w "%{http_code}" \
+HTTP_CODE=$(curl -s -o /tmp/clickui_put_response.txt -w "%{http_code}" \
   -X PUT "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/sessions/${SESSION_ID}/payload" \
   -H "Content-Type: application/json" \
-  -d @/tmp/clawui_payload.json)
+  -d @/tmp/clickui_payload.json)
 echo "PUT_HTTP=$HTTP_CODE"
-cat /tmp/clawui_put_response.txt
+cat /tmp/clickui_put_response.txt
 ```
 
 If HTTP is not `200`, fix the JSON and retry the PUT. Do not loop back to A with a failed PUT.

@@ -5,3 +5,7 @@ dist/
 *.local
 
 AGENTS.md
+
+paper/
+CLAUDE.md
+PLAN.md

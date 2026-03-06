@@ -73,6 +73,21 @@ No WebSockets, no framework plugins. One HTTP endpoint in, one HTTP endpoint out
 
 ---
 
+## Skill Layout
+
+The root `SKILL.md` is a router only. Detailed review workflows live in:
+
+- `skills/clickui-approve/`
+- `skills/clickui-code/`
+- `skills/clickui-email/`
+- `skills/clickui-plan/`
+- `skills/clickui-trajectory/`
+- `skills/clickui-memory/`
+
+Use the sub-skill that matches the review type instead of expanding the root skill file.
+
+---
+
 ## API
 
 | Method | Endpoint | Description |
