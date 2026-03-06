@@ -7,6 +7,7 @@ import { spawnSync, spawn } from 'node:child_process'
 import { pipeline } from 'node:stream/promises'
 import { homedir } from 'node:os'
 import net from 'node:net'
+import qrcode from 'qrcode-terminal'
 
 const DEFAULT_PORT = 38173
 const __filename = fileURLToPath(import.meta.url)
@@ -233,7 +234,8 @@ function printTunnelBanner(url) {
   console.log(`\n  ┌${bar}┐`)
   console.log(`  │  ${url}  │`)
   console.log(`  └${bar}┘`)
-  console.log('  Open this URL on your phone. Valid while this terminal is open.\n')
+  console.log('  Scan to open on your phone:\n')
+  qrcode.generate(url, { small: true })
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
