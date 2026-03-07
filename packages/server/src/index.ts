@@ -604,6 +604,45 @@ app.post('/api/mock/email-monitor/start', (req, res) => {
   res.json({ ok: true, started: true, sessionId })
 })
 
+app.post('/api/sessions/:id/email-send', async (req, res) => {
+  const session = getSession(req.params.id)
+  if (!session) return res.status(404).json({ error: 'Session not found' })
+
+  const payload = session.payload as Record<string, unknown>
+  const inbox = Array.isArray(payload.inbox) ? payload.inbox as Array<Record<string, unknown>> : []
+  const emailId = typeof req.body?.emailId === 'string' ? req.body.emailId : ''
+  if (!emailId) return res.status(400).json({ error: 'Missing emailId' })
+
+  const nextInbox = inbox.filter(email => String(email.id ?? '') !== emailId)
+  const result = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {}
+
+  updateSessionPayload(req.params.id, {
+    ...payload,
+    inbox: nextInbox,
+  })
+  updateSessionPageStatus(req.params.id, { state: 'submitted', updatedAt: Date.now() })
+
+  let callbackFailed = false
+  let callbackError = ''
+  if (session.sessionKey) {
+    try {
+      const lines = ['[agentclick] User sent an email reply from inbox review.']
+      const editedDraft = result.editedDraft && typeof result.editedDraft === 'object'
+        ? result.editedDraft as Record<string, unknown>
+        : null
+      const subject = typeof editedDraft?.subject === 'string' ? editedDraft.subject : ''
+      if (subject) lines.push(`- Subject: ${subject}`)
+      lines.push(`- Removed email ${emailId} from inbox UI after send.`)
+      await callWebhook({ message: lines.join('\n'), sessionKey: session.sessionKey, deliver: true })
+    } catch (err) {
+      callbackFailed = true
+      callbackError = String(err)
+    }
+  }
+
+  res.json({ ok: true, callbackFailed, callbackError, remaining: nextInbox.length })
+})
+
 app.get('/api/sessions/:id/summary', (req, res) => {
   const session = getSession(req.params.id)
   if (!session) return res.status(404).json({ error: 'Session not found' })

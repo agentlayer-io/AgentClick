@@ -543,6 +543,57 @@ export default function ReviewPage() {
     const editedDraftParagraphs = hasInbox
       ? buildEditedParagraphs(activeDraftForState?.paragraphs ?? [], states, rewriteInput)
       : []
+    if (hasInbox && confirmed && selectedEmailId) {
+      const body = {
+        actions,
+        confirmed: true,
+        markedAsRead,
+        markedAsReadDetails: (payload as InboxPayload).inbox
+          .filter(email => markedAsRead.includes(email.id))
+          .map(email => ({ id: email.id, from: email.from, subject: email.subject })),
+        userIntention,
+        selectedIntents: selectedIntentsList,
+        unreadEmailCount: (payload as InboxPayload).inbox.filter(email => email.unread !== false && !markedAsRead.includes(email.id)).length,
+        editedDraft: {
+          emailId: selectedEmailId,
+          to: draftTo,
+          cc: draftCc,
+          bcc: draftBcc,
+          subject: draftSubject,
+          body: paragraphsToText(editedDraftParagraphs),
+          paragraphs: editedDraftParagraphs,
+        },
+        pageStatus: {
+          state: 'submitted',
+        },
+      }
+      const result = await fetch(`/api/sessions/${id}/email-send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          emailId: selectedEmailId,
+          ...body,
+        }),
+      }).then(r => r.json())
+
+      if (result.callbackFailed) {
+        setCallbackFailed(true)
+      }
+
+      setPayload(currentPayload => {
+        if (!currentPayload || !('inbox' in currentPayload)) return currentPayload
+        return {
+          ...currentPayload,
+          inbox: currentPayload.inbox.filter(email => email.id !== selectedEmailId),
+        }
+      })
+      setMarkedAsRead(current => Array.from(new Set([...current, selectedEmailId])))
+      setSelectedEmailId(null)
+      setRightView('empty')
+      resetEditState()
+      setSubmitting(false)
+      return
+    }
     const body = hasInbox
       ? JSON.stringify({
           actions,
