@@ -6,6 +6,15 @@ interface Paragraph {
   content: string
 }
 
+interface DraftPayload {
+  replyTo: string
+  to: string
+  subject: string
+  paragraphs: Paragraph[]
+  ccSuggestions?: CcSuggestion[]
+  intentSuggestions?: IntentSuggestion[]
+}
+
 interface EmailPayload {
   to: string
   subject: string
@@ -22,6 +31,8 @@ interface EmailItem {
   preview: string
   body?: string
   headers?: Array<{ label: string; value: string }>
+  unread?: boolean
+  replyDraft?: DraftPayload
   category: 'Primary' | 'Social' | 'Promotions' | 'Updates' | 'Forums' | string
   timestamp: number
 }
@@ -38,14 +49,7 @@ interface IntentSuggestion {
 
 interface InboxPayload {
   inbox: EmailItem[]
-  draft: {
-    replyTo: string
-    to: string
-    subject: string
-    paragraphs: Paragraph[]
-    ccSuggestions?: CcSuggestion[]
-    intentSuggestions?: IntentSuggestion[]
-  }
+  draft: DraftPayload
 }
 
 interface Action {
@@ -112,6 +116,27 @@ function joinAddresses(values?: string[]): string {
   return values && values.length > 0 ? values.join(', ') : '—'
 }
 
+function paragraphsToText(paragraphs: Paragraph[]): string {
+  return paragraphs.map(p => p.content).join('\n\n')
+}
+
+function textToParagraphs(text: string): Paragraph[] {
+  return text
+    .split(/\n{2,}/)
+    .map(part => part.trim())
+    .filter(Boolean)
+    .map((content, index) => ({ id: `edited_${index + 1}`, content }))
+}
+
+function fallbackIntentSuggestions(email: EmailItem | null): IntentSuggestion[] {
+  if (!email) return []
+  return [
+    { id: `fallback_ack_${email.id}`, text: 'Acknowledge the email' },
+    { id: `fallback_brief_${email.id}`, text: 'Keep the reply brief' },
+    { id: `fallback_followup_${email.id}`, text: 'Ask one clear follow-up question' },
+  ]
+}
+
 export default function ReviewPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -134,6 +159,10 @@ export default function ReviewPage() {
   const [markedAsRead, setMarkedAsRead] = useState<string[]>([])
   const [userIntention, setUserIntention] = useState('')
   const [selectedIntents, setSelectedIntents] = useState<Record<string, boolean>>({})
+  const [emailFilter, setEmailFilter] = useState('')
+  const [draftTo, setDraftTo] = useState('')
+  const [draftSubject, setDraftSubject] = useState('')
+  const [draftBody, setDraftBody] = useState('')
   const [summaryEmail, setSummaryEmail] = useState<EmailItem | null>(null)
   const [summaryData, setSummaryData] = useState<SummaryResponse | null>(null)
   const [summaryLoading, setSummaryLoading] = useState(false)
@@ -145,6 +174,9 @@ export default function ReviewPage() {
     setRewriteInput({})
     setUserIntention('')
     setSelectedIntents({})
+    setDraftTo('')
+    setDraftSubject('')
+    setDraftBody('')
     setSubmitting(false)
   }, [])
 
@@ -260,8 +292,19 @@ export default function ReviewPage() {
           confirmed,
           regenerate: !confirmed,
           markedAsRead,
+          markedAsReadDetails: (payload as InboxPayload).inbox
+            .filter(email => markedAsRead.includes(email.id))
+            .map(email => ({ id: email.id, from: email.from, subject: email.subject })),
           userIntention,
           selectedIntents: selectedIntentsList,
+          unreadEmailCount: (payload as InboxPayload).inbox.filter(email => email.unread !== false && !markedAsRead.includes(email.id)).length,
+          editedDraft: {
+            emailId: selectedEmailId ?? undefined,
+            to: draftTo,
+            subject: draftSubject,
+            body: draftBody,
+            paragraphs: textToParagraphs(draftBody),
+          },
         })
       : JSON.stringify({ actions, confirmed, regenerate: !confirmed })
     const result = await fetch(`/api/sessions/${id}/complete`, {
@@ -286,6 +329,22 @@ export default function ReviewPage() {
       navigate('/')
     }
   }
+
+  const hasInbox = payload && 'inbox' in payload && Array.isArray((payload as InboxPayload).inbox)
+  const inboxPayloadForState = hasInbox ? payload as InboxPayload : null
+  const selectedInboxEmail = inboxPayloadForState && selectedEmailId
+    ? inboxPayloadForState.inbox.find(email => email.id === selectedEmailId) ?? null
+    : null
+  const activeDraftForState = inboxPayloadForState
+    ? (selectedInboxEmail?.replyDraft ?? inboxPayloadForState.draft)
+    : null
+
+  useEffect(() => {
+    if (!activeDraftForState) return
+    setDraftTo(activeDraftForState.to)
+    setDraftSubject(activeDraftForState.subject)
+    setDraftBody(paragraphsToText(activeDraftForState.paragraphs))
+  }, [activeDraftForState?.to, activeDraftForState?.subject, activeDraftForState?.paragraphs])
 
   if (error) return (
     <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex items-center justify-center">
@@ -317,14 +376,25 @@ export default function ReviewPage() {
     </div>
   )
 
-  const hasInbox = payload && 'inbox' in payload && Array.isArray((payload as InboxPayload).inbox)
-
   // Format B — two-column layout
   if (hasInbox) {
     const inboxPayload = payload as InboxPayload
-    const visibleEmails = inboxPayload.inbox.filter(e => !markedAsRead.includes(e.id)).slice(0, 10)
+    const unreadEmails = inboxPayload.inbox.filter(e => e.unread !== false && !markedAsRead.includes(e.id))
+    const filterNeedle = emailFilter.trim().toLowerCase()
+    const filteredEmails = unreadEmails.filter(email =>
+      !filterNeedle
+      || email.from.toLowerCase().includes(filterNeedle)
+      || email.subject.toLowerCase().includes(filterNeedle)
+      || email.preview.toLowerCase().includes(filterNeedle)
+      || normalizeCategory(email.category).toLowerCase().includes(filterNeedle)
+    )
+    const visibleEmails = filteredEmails.slice(0, 20)
     const hasActions = actions.length > 0
-    const intentSuggestions = inboxPayload.draft.intentSuggestions ?? []
+    const selectedEmail = selectedInboxEmail
+    const activeDraft = selectedEmail?.replyDraft ?? inboxPayload.draft
+    const intentSuggestions = (activeDraft.intentSuggestions && activeDraft.intentSuggestions.length > 0)
+      ? activeDraft.intentSuggestions
+      : fallbackIntentSuggestions(selectedEmail)
     const effectiveRightView = rightView === 'empty' && visibleEmails.length === 0 ? 'draft' : rightView
 
     const toggleIntent = (intentId: string) => {
@@ -416,6 +486,24 @@ export default function ReviewPage() {
           {!isCompleted && (
             <button onClick={() => navigate('/')} className="text-sm text-zinc-400 dark:text-slate-500 hover:text-zinc-600 dark:hover:text-slate-300 transition-colors p-4 block border-b border-gray-50 dark:border-zinc-800 w-full text-left">← Back</button>
           )}
+          <div className="p-4 border-b border-gray-50 dark:border-zinc-800 space-y-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-zinc-400 dark:text-slate-500">Unread Inbox</p>
+              <p className="text-sm text-zinc-700 dark:text-slate-300 mt-1">
+                {unreadEmails.length} unread email{unreadEmails.length === 1 ? '' : 's'}
+              </p>
+            </div>
+            <input
+              type="text"
+              value={emailFilter}
+              onChange={e => setEmailFilter(e.target.value)}
+              placeholder="Filter emails"
+              className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
+            />
+            <p className="text-[11px] text-zinc-400 dark:text-slate-500">
+              Showing {visibleEmails.length} of {filteredEmails.length} filtered unread emails
+            </p>
+          </div>
           {visibleEmails.length === 0 ? (
             <p className="text-sm text-zinc-400 dark:text-slate-500 p-4">No unread emails.</p>
           ) : (
@@ -626,8 +714,39 @@ export default function ReviewPage() {
                 {/* Header */}
                 <div className="mb-6">
                   <p className="text-xs text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-1">Email Draft Review</p>
-                  <h1 className="text-xl font-semibold text-gray-800 dark:text-slate-100">{inboxPayload.draft.subject}</h1>
-                  <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">To: {inboxPayload.draft.to}</p>
+                  <h1 className="text-xl font-semibold text-gray-800 dark:text-slate-100">{draftSubject || activeDraft.subject}</h1>
+                  <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">To: {draftTo || activeDraft.to}</p>
+                </div>
+
+                <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg space-y-3">
+                  <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider">Reply Draft</p>
+                  <div>
+                    <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">To</label>
+                    <input
+                      type="text"
+                      value={draftTo}
+                      onChange={e => setDraftTo(e.target.value)}
+                      className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Subject</label>
+                    <input
+                      type="text"
+                      value={draftSubject}
+                      onChange={e => setDraftSubject(e.target.value)}
+                      className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Reply Body</label>
+                    <textarea
+                      value={draftBody}
+                      onChange={e => setDraftBody(e.target.value)}
+                      rows={8}
+                      className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    />
+                  </div>
                 </div>
 
                 {/* Waiting for rewrite indicator */}
@@ -667,7 +786,7 @@ export default function ReviewPage() {
                     {/* Intent Suggestions */}
                     {intentSuggestions.length > 0 && (
                       <div className="mb-6">
-                        <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-2">Intent Suggestions</label>
+                        <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-2">Reply Suggestions</label>
                         <div className="flex flex-wrap gap-2">
                           {intentSuggestions.map(suggestion => {
                             const selected = !!selectedIntents[suggestion.id]

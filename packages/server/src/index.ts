@@ -711,6 +711,27 @@ function buildActionSummary(result: Record<string, unknown>): string {
     lines.push(`- Intent decisions: ${intents.map(i => `${i.id} → ${i.accepted ? 'accepted' : 'rejected'}`).join(', ')}`)
   }
 
+  const unreadEmailCount = typeof result.unreadEmailCount === 'number' ? result.unreadEmailCount : null
+  if (unreadEmailCount !== null) {
+    lines.push(`- Remaining unread emails: ${unreadEmailCount}`)
+  }
+
+  const markedAsReadDetails = Array.isArray(result.markedAsReadDetails)
+    ? result.markedAsReadDetails.filter((item): item is { id?: string; from?: string; subject?: string } => !!item && typeof item === 'object')
+    : []
+  if (markedAsReadDetails.length > 0) {
+    lines.push(`- Marked as read: ${markedAsReadDetails.map(item => `${item.subject ?? item.id ?? 'unknown'}${item.from ? ` from ${item.from}` : ''}`).join(', ')}`)
+  }
+
+  const editedDraft = result.editedDraft && typeof result.editedDraft === 'object'
+    ? result.editedDraft as Record<string, unknown>
+    : null
+  if (editedDraft) {
+    const draftTo = typeof editedDraft.to === 'string' ? editedDraft.to : ''
+    const draftSubject = typeof editedDraft.subject === 'string' ? editedDraft.subject : ''
+    lines.push(`- Edited draft ready${draftTo ? ` to ${draftTo}` : ''}${draftSubject ? ` with subject "${draftSubject}"` : ''}.`)
+  }
+
   return lines.join('\n')
 }
 
