@@ -27,6 +27,7 @@ const WEB_DIST_DIR = join(__dirname, '../../web/dist')
 const README_PATH = join(__dirname, '../../../README.md')
 const SHOULD_SERVE_BUILT_WEB = existsSync(WEB_DIST_DIR) && (__filename.endsWith('/dist/index.js') || process.env.NODE_ENV === 'production')
 const WEB_ORIGIN = process.env.WEB_ORIGIN || (SHOULD_SERVE_BUILT_WEB ? `http://localhost:${PORT}` : 'http://localhost:5173')
+const mockEmailMonitors = new Map<string, { running: boolean }>()
 
 app.use(cors())
 app.use(express.json())
@@ -66,6 +67,133 @@ function createSessionId(): string {
     id = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   } while (getSession(id))
   return id
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function buildMockReplyDraft(email: Record<string, unknown>): Record<string, unknown> {
+  const from = String(email.from ?? 'sender@example.com')
+  const subject = String(email.subject ?? 'Re: Email')
+  const body = String(email.body ?? email.preview ?? '').trim()
+  const lines = body.split('\n').map(line => line.trim()).filter(Boolean)
+  const summaryLine = lines.find(line => !line.startsWith('-') && !line.startsWith('*')) ?? 'I reviewed your note.'
+  return {
+    replyTo: from,
+    to: from,
+    subject: subject.startsWith('Re:') ? subject : `Re: ${subject}`,
+    paragraphs: [
+      { id: 'mock_p1', content: `Thanks. I reviewed this and the main point is clear: ${summaryLine}` },
+      { id: 'mock_p2', content: 'I am aligned with the current direction. If there is an updated version or final changelog, send it over and I will review it quickly.' },
+    ],
+    intentSuggestions: [
+      { id: 'mock_intent_ack', text: 'Acknowledge the email' },
+      { id: 'mock_intent_brief', text: 'Keep the reply brief' },
+      { id: 'mock_intent_followup', text: 'Ask for the latest update' },
+    ],
+  }
+}
+
+function buildMockReadMoreEmails(categories: string[], existingIds: string[]): Array<Record<string, unknown>> {
+  const now = Date.now()
+  const requested = categories.length > 0 ? categories : ['Primary', 'Updates', 'Promotions']
+  const samples: Array<Record<string, unknown>> = requested.flatMap((category, index) => ([
+    {
+      id: `mock_more_${category.toLowerCase()}_${index}_a`,
+      from: category === 'Updates' ? 'Google Scholar Alerts' : category === 'Promotions' ? 'HeyGen' : 'Project Ops',
+      to: 'hm@example.com',
+      subject: category === 'Updates' ? 'New papers matching your LLM alert' : category === 'Promotions' ? 'Slack integration is now live' : 'Follow-up on current workstream',
+      preview: category === 'Updates' ? 'Several new papers were published overnight.' : category === 'Promotions' ? 'A new product integration is available today.' : 'A short follow-up requiring attention today.',
+      body: category === 'Updates'
+        ? 'Several new papers matching your alert were published overnight, including safety evaluations and efficient fine-tuning work.'
+        : category === 'Promotions'
+          ? 'A new integration is now available with guided setup, templates, and launch pricing.'
+          : 'Following up on the current workstream. Please confirm whether the latest change list is final.',
+      unread: true,
+      category,
+      timestamp: now - (index + 1) * 60000,
+    },
+  ]))
+
+  return samples.filter(email => !existingIds.includes(String(email.id)))
+}
+
+async function startMockEmailMonitor(sessionId: string): Promise<void> {
+  if (mockEmailMonitors.get(sessionId)?.running) return
+  mockEmailMonitors.set(sessionId, { running: true })
+
+  try {
+    while (true) {
+      const session = getSession(sessionId)
+      if (!session) break
+      if (session.pageStatus?.stopMonitoring) break
+      if (session.status === 'completed') break
+      if (session.status !== 'rewriting') {
+        await sleep(500)
+        continue
+      }
+
+      const payload = session.payload as Record<string, unknown>
+      const result = (session.result ?? {}) as Record<string, unknown>
+      const inbox = Array.isArray(payload.inbox) ? payload.inbox as Array<Record<string, unknown>> : []
+      const draft = payload.draft as Record<string, unknown> | undefined
+
+      if (result.requestReplyDraft) {
+        const emailId = String(result.emailId ?? '')
+        const targetEmail = inbox.find(email => String(email.id) === emailId)
+        if (!targetEmail) {
+          updateSessionPayload(sessionId, payload)
+          continue
+        }
+        await sleep(1200)
+        updateSessionPayload(sessionId, {
+          ...payload,
+          inbox: inbox.map(email => String(email.id) === emailId
+            ? {
+                ...email,
+                replyState: 'ready',
+                replyUnread: true,
+                replyDraft: buildMockReplyDraft(email),
+              }
+            : email),
+          draft,
+        })
+        continue
+      }
+
+      if (result.readMore) {
+        const categories = Array.isArray(result.requestedCategories)
+          ? result.requestedCategories.filter((item): item is string => typeof item === 'string')
+          : []
+        const existingIds = inbox.map(email => String(email.id ?? ''))
+        const extraEmails = buildMockReadMoreEmails(categories, existingIds)
+        await sleep(800)
+        updateSessionPayload(sessionId, {
+          ...payload,
+          inbox: [...inbox, ...extraEmails],
+          draft,
+        })
+        continue
+      }
+
+      const editedDraft = result.editedDraft && typeof result.editedDraft === 'object'
+        ? result.editedDraft as Record<string, unknown>
+        : null
+      if (editedDraft) {
+        await sleep(900)
+        updateSessionPayload(sessionId, {
+          ...payload,
+          draft: editedDraft,
+        })
+        continue
+      }
+
+      await sleep(500)
+    }
+  } finally {
+    mockEmailMonitors.delete(sessionId)
+  }
 }
 
 // Lightweight identity endpoint so clients can verify the service is AgentClick.
@@ -464,6 +592,16 @@ app.post('/api/sessions/:id/page-status', (req, res) => {
   }
   updateSessionPageStatus(req.params.id, pageStatus)
   res.json({ ok: true, pageStatus })
+})
+
+app.post('/api/mock/email-monitor/start', (req, res) => {
+  const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : ''
+  if (!sessionId) return res.status(400).json({ error: 'Missing sessionId' })
+  const session = getSession(sessionId)
+  if (!session) return res.status(404).json({ error: 'Session not found' })
+  if (session.type !== 'email_review') return res.status(400).json({ error: 'Session is not an email review' })
+  void startMockEmailMonitor(sessionId)
+  res.json({ ok: true, started: true, sessionId })
 })
 
 app.get('/api/sessions/:id/summary', (req, res) => {
