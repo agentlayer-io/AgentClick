@@ -227,23 +227,24 @@ export function deletePreference(index: number): void {
 
   const content = fs.readFileSync(MEMORY_PATH, 'utf-8')
   const lines = content.split('\n')
-  const headerIdx = lines.findIndex(l => l === SECTION_HEADER)
-  if (headerIdx === -1) return
 
-  let endIdx = lines.length
-  for (let i = headerIdx + 1; i < lines.length; i++) {
-    if (lines[i].startsWith('## ')) { endIdx = i; break }
+  // Collect all preference line indices across both sections (same order as getLearnedPreferences)
+  const prefLineIndices: number[] = []
+  for (const header of [SECTION_HEADER, TRAJECTORY_SECTION_HEADER]) {
+    const headerIdx = lines.findIndex(l => l === header)
+    if (headerIdx === -1) continue
+    let endIdx = lines.length
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      if (lines[i].startsWith('## ')) { endIdx = i; break }
+    }
+    for (let i = headerIdx + 1; i < endIdx; i++) {
+      if (lines[i].match(/^- (AVOID|PREFER):/)) prefLineIndices.push(i)
+    }
   }
 
-  // Collect indices of AVOID lines in the section
-  const avoidLineIndices: number[] = []
-  for (let i = headerIdx + 1; i < endIdx; i++) {
-    if (lines[i].match(/^- AVOID:/)) avoidLineIndices.push(i)
-  }
+  if (index < 0 || index >= prefLineIndices.length) return
 
-  if (index < 0 || index >= avoidLineIndices.length) return
-
-  lines.splice(avoidLineIndices[index], 1)
+  lines.splice(prefLineIndices[index], 1)
   fs.writeFileSync(MEMORY_PATH, lines.join('\n'), 'utf-8')
 }
 
