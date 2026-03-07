@@ -4,9 +4,11 @@ Use this file only to route to the right sub-skill.
 
 Base flow:
 1. Resolve `AGENTCLICK_URL` or default to `http://localhost:${AGENTCLICK_PORT:-${PORT:-38173}}`.
-2. Create a session with `POST /api/review`.
-3. Wait on `GET /api/sessions/:id/wait`.
-4. If status is `rewriting`, update with `PUT /api/sessions/:id/payload` and wait again.
+2. Check `GET /api/health` before creating a session.
+3. If the server is not reachable, start AgentClick locally from this repo with `npm run start`, then re-check `GET /api/health`.
+4. Create a session with `POST /api/review`.
+5. Treat the session as live and monitor `GET /api/sessions/:id/wait`.
+6. If status is `rewriting`, update with `PUT /api/sessions/:id/payload` and continue monitoring the same session until completion, timeout, or stop-monitor.
 
 Sub-skills:
 - `action_approval` -> `skills/clickui-approve/SKILL.md`

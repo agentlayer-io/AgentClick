@@ -32,50 +32,86 @@ Submission opens the email review page for the active session. Treat that page a
 
 ---
 
-## Main Agent: Two Steps Only
+## Live Session Workflow
 
-The main agent submits the email session and immediately hands off to a sub-agent. It does NOT poll.
+The same agent must create and monitor the session. Do not rely on a sub-agent, Task tool, or separate monitor process. Treat every email review as a live session.
 
-### Step 1: Submit the email session
+### Step 1: Ensure AgentClick is running
 
 ```bash
-if curl -s --max-time 1 http://localhost:38173/api/health > /dev/null 2>&1; then
-  AGENTCLICK_BASE="http://localhost:38173"
-else
-  AGENTCLICK_BASE="http://host.docker.internal:38173"
+AGENTCLICK_BASE="${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-${PORT:-38173}}}"
+
+if ! curl -s --max-time 1 "$AGENTCLICK_BASE/api/health" > /dev/null 2>&1; then
+  npm run start &
+
+  for _ in $(seq 1 30); do
+    if curl -s --max-time 1 "$AGENTCLICK_BASE/api/health" > /dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
 fi
+
+curl -s --max-time 1 "$AGENTCLICK_BASE/api/health" > /dev/null 2>&1
+```
+
+If the health check still fails after startup, stop and fix the server problem before creating a review session.
+
+### Step 2: Build the inbox payload
+
+Fetch full email bodies in parallel when you need multiple messages. Do not fetch messages serially unless the provider or CLI forces it.
+
+Use the bundled script:
+- Script: `skills/clickui-email/scripts/fetch_gmail_inbox_parallel.mjs`
+- Purpose: search Gmail with `gog`, fetch each full message in parallel, normalize it into AgentClick inbox format, and write JSON to disk
+
+Basic usage:
+
+```bash
+node skills/clickui-email/scripts/fetch_gmail_inbox_parallel.mjs \
+  --query 'is:unread' \
+  --max 10 \
+  --out /tmp/clickui_inbox.json
+```
+
+With explicit Gmail account and tuned concurrency:
+
+```bash
+node skills/clickui-email/scripts/fetch_gmail_inbox_parallel.mjs \
+  --query 'category:primary is:unread' \
+  --max 10 \
+  --account you@gmail.com \
+  --concurrency 5 \
+  --out /tmp/clickui_inbox.json
+```
+
+The script prints a small JSON summary and writes the inbox array to the path passed via `--out`.
+Load that file into the review payload instead of rebuilding the inbox JSON inline.
+
+### Step 3: Submit the email session
+
+Write the request body to a temp file before POSTing. This is more reliable for full email bodies and special characters.
+
+```bash
+cat > /tmp/clickui_review.json <<'JSON'
+{
+  "type": "email_review",
+  "sessionKey": "SESSION_KEY",
+  "payload": {
+    "inbox": [],
+    "draft": {
+      "replyTo": "",
+      "to": "",
+      "subject": "",
+      "paragraphs": []
+    }
+  }
+}
+JSON
 
 RESPONSE=$(curl -s -X POST "$AGENTCLICK_BASE/api/review" \
   -H "Content-Type: application/json" \
-  -d '{
-    "type": "email_review",
-    "sessionKey": "'"$SESSION_KEY"'",
-    "payload": {
-      "inbox": [
-        {
-          "id": "e1",
-          "from": "SENDER_EMAIL",
-          "to": "RECIPIENT_EMAIL",
-          "subject": "ORIGINAL_SUBJECT",
-          "preview": "SHORT_SIDEBAR_SNIPPET_ONLY",
-          "body": "FULL_ORIGINAL_EMAIL_BODY",
-          "headers": [
-            {"label": "Message-ID", "value": "<message-id@example.com>"},
-            {"label": "Thread", "value": "THREAD_SUBJECT"}
-          ],
-          "category": "Updates",
-          "unread": true,
-          "timestamp": UNIX_MS_TIMESTAMP
-        }
-      ],
-      "draft": {
-        "replyTo": "SENDER_EMAIL",
-        "to": "RECIPIENT_EMAIL",
-        "subject": "Re: ORIGINAL_SUBJECT",
-        "paragraphs": []
-      }
-    }
-  }')
+  -d @/tmp/clickui_review.json)
 SESSION_ID=$(echo "$RESPONSE" | grep -o '"sessionId":"[^"]*"' | cut -d'"' -f4)
 echo "Session: $SESSION_ID"
 ```
@@ -87,30 +123,15 @@ Rules for the initial payload:
 - Default to `draft.paragraphs: []` until the user clicks `Reply`.
 - Normalize categories to Gmail-style values when possible: `Primary`, `Social`, `Promotions`, `Updates`, `Forums`.
 
-### Step 2: Spawn a monitor sub-agent
+### Step 4: Monitor the live session
 
-Use the Task tool to spawn a sub-agent. Pass it:
-- The `SESSION_ID`
-- The full inbox array (exactly as submitted)
-- The current draft object (which may start empty)
-
-Tell the sub-agent to follow the **Sub-Agent Instructions** section below.
-
-Preferred flow:
-- Spawn the sub-agent and let it own the session monitor loop.
-- If spawning the sub-agent fails, the main agent must take over the same monitor loop directly.
-- If blocking `/wait` is unavailable in your environment, poll `GET /api/sessions/${SESSION_ID}` every 10 seconds and inspect `status`, `result`, and `pageStatus`.
-
-The main agent's job is done only if the sub-agent is running correctly.
-Do NOT start a new session.
-
-When the sub-agent finishes, it returns the final confirmed result. Use that to send the email.
+After creating the session, the same agent must own the monitor loop. Do NOT start a new session.
 
 ---
 
-## Sub-Agent Instructions
+## Monitor Instructions
 
-You are a dedicated monitor for an AgentClick email review session. You own the full interaction loop until the user confirms or the session times out.
+You are the dedicated monitor for an AgentClick email review session. You own the full interaction loop until the user confirms or the session times out.
 
 You have been given:
 - `SESSION_ID` — the active session
@@ -155,7 +176,7 @@ When using the fallback:
 - Check `status`
 - Check `result`
 - Check `pageStatus`
-- If `pageStatus.stopMonitoring` is `true`, stop the sub-agent or stop the main-agent monitor loop immediately
+- If `pageStatus.stopMonitoring` is `true`, stop the monitor loop immediately
 
 #### B. Branch on STATUS
 
@@ -224,9 +245,7 @@ When preparing a first reply draft after the user clicks `Reply`, use the same P
 
 #### D. Report to main agent after each rewrite round
 
-After a successful PUT, the server automatically notifies the main agent via webhook with a progress summary. You do not need to call the webhook yourself.
-
-However, you must update your local state before looping:
+After a successful PUT, update your local state before looping:
 - Increment `ROUND`
 - Update your in-memory `draft` to the new content
 - Append to `LOG`: `"Round N: rewrote [paragraph IDs] — [user instruction]"`
@@ -249,7 +268,7 @@ Extract from the final `/wait` response:
 Output a structured report for the main agent:
 
 ```
-SUBAGENT_RESULT: success
+MONITOR_RESULT: success
 SESSION_ID: <id>
 ROUNDS: <N>
 LOG:
@@ -265,7 +284,7 @@ FINAL_DRAFT:
 EMAIL_STATE_CHANGES:
   marked_read:
     - <email id>
-INSTRUCTION_TO_MAIN_AGENT: Send the email using the FINAL_DRAFT above, and sync any marked-read state. Do not ask the user again.
+INSTRUCTION: Send the email using the FINAL_DRAFT above, and sync any marked-read state. Do not ask the user again.
 ```
 
 ## UI Behavior Requirements
@@ -277,7 +296,7 @@ Follow these UI assumptions when preparing or updating payloads:
 - The reply draft panel is folded by default when it first appears.
 - While a reply is being generated, the UI should be able to show loading for that email and still let the user browse other emails.
 - When a reply draft becomes ready, the corresponding email row should show a visible ready state and an unread red dot until the user opens that reply.
-- The UI may send a stop-monitor signal when the user leaves the page. Respect it and stop the sub-agent or monitor loop cleanly.
+- The UI may send a stop-monitor signal when the user leaves the page. Respect it and stop the monitor loop cleanly.
 - Fast updates matter. Prefer sending an immediate "loading" payload update, then a second payload update with the completed draft.
 
 ---
@@ -285,12 +304,12 @@ Follow these UI assumptions when preparing or updating payloads:
 ### Exit: Timeout (HTTP 408 or empty STATUS)
 
 ```
-SUBAGENT_RESULT: timeout
+MONITOR_RESULT: timeout
 SESSION_ID: <id>
 ROUNDS_COMPLETED: <N>
 LOG:
   - Round 1: <what changed>
-INSTRUCTION_TO_MAIN_AGENT: User did not respond within 5 minutes. Ask the user if they want to resume or cancel.
+INSTRUCTION: User did not respond within 5 minutes. Ask the user if they want to resume or cancel.
 ```
 
 ---
@@ -300,7 +319,7 @@ INSTRUCTION_TO_MAIN_AGENT: User did not respond within 5 minutes. Ask the user i
 If `ROUND` reaches 10 without a `completed` status:
 
 ```
-SUBAGENT_RESULT: max_rounds_reached
+MONITOR_RESULT: max_rounds_reached
 SESSION_ID: <id>
-INSTRUCTION_TO_MAIN_AGENT: The user requested 10+ rewrites without confirming. Ask the user how they want to proceed.
+INSTRUCTION: The user requested 10+ rewrites without confirming. Ask the user how they want to proceed.
 ```
