@@ -590,6 +590,9 @@ app.post('/api/sessions/:id/complete', async (req, res) => {
     setSessionRewriting(req.params.id, req.body)
     updateSessionPageStatus(req.params.id, { state: 'submitted', updatedAt: Date.now() })
     console.log(`[agentclick] Session ${session.id} → rewriting:`, JSON.stringify(req.body, null, 2))
+    // Learn from deletions even in rewriting rounds
+    const rewriteActions = (req.body.actions ?? []) as Array<{ type: string; paragraphId: string; reason?: string; instruction?: string }>
+    learnFromDeletions(rewriteActions, session.payload as Record<string, unknown>)
     res.json({ ok: true, rewriting: true })
     return
   }
