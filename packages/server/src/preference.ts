@@ -120,6 +120,48 @@ interface TrajectoryPayload {
   [key: string]: unknown
 }
 
+interface RewriteAction {
+  type: string
+  paragraphId: string
+  instruction?: string
+  shouldLearn?: boolean
+}
+
+export function learnFromRewrite(
+  actions: RewriteAction[],
+  payload: SessionPayload
+): void {
+  const learnable = actions.filter(a => a.type === 'rewrite' && a.shouldLearn && a.instruction)
+  if (learnable.length === 0) return
+
+  const draft = payload.draft as { paragraphs?: Paragraph[] } | undefined
+  const paragraphs = (draft?.paragraphs ?? payload.paragraphs ?? []) as Paragraph[]
+  const paragraphMap = new Map<string, string>(
+    paragraphs.map(p => [p.id, p.content])
+  )
+
+  const scope = payload.type === 'email_review' ? 'email' : 'general'
+
+  const rules: string[] = []
+  for (const action of learnable) {
+    const content = paragraphMap.get(action.paragraphId)
+    const context = content ? ` (context: ${summarize(content)})` : ''
+    rules.push(`- PREFER: ${summarize(action.instruction!)}${context} - SCOPE: ${scope}`)
+  }
+
+  if (rules.length === 0) return
+
+  ensureMemoryFile()
+  const existing = fs.readFileSync(MEMORY_PATH, 'utf-8')
+  const needsHeader = !existing.includes(SECTION_HEADER)
+  const block = needsHeader
+    ? `\n${SECTION_HEADER}\n${rules.join('\n')}\n`
+    : `${rules.join('\n')}\n`
+
+  fs.appendFileSync(MEMORY_PATH, block, 'utf-8')
+  console.log(`[agentclick] Learned ${rules.length} rewrite style rule(s) -> ${MEMORY_PATH}`)
+}
+
 export function learnFromTrajectoryRevisions(
   revisions: StepRevision[],
   payload: TrajectoryPayload
@@ -229,6 +271,15 @@ export function getLearnedPreferences(): LearnedPreference[] {
           description: match[1].trim(),
           reason: match[2].trim(),
           scope: match[3].trim(),
+          type: 'email',
+        })
+      }
+      const preferMatch = line.match(/^- PREFER: (.+?)(?:\s+\(context: .+?\))? - SCOPE: (.+)$/)
+      if (preferMatch) {
+        preferences.push({
+          description: preferMatch[1].trim(),
+          reason: 'style preference',
+          scope: preferMatch[2].trim(),
           type: 'email',
         })
       }
