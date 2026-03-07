@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { promisify } from 'util'
-import { learnFromDeletions, learnFromTrajectoryRevisions, getLearnedPreferences, clearPreferences, deletePreference } from './preference.js'
+import { learnFromDeletions, learnFromTrajectoryRevisions, learnFromCodeRejection, learnFromActionRejection, getLearnedPreferences, clearPreferences, deletePreference } from './preference.js'
 import { createSession, getSession, listSessions, completeSession, setSessionRewriting, updateSessionPageStatus, updateSessionPayload } from './store.js'
 import {
   buildMemoryCatalog,
@@ -1017,6 +1017,16 @@ app.post('/api/sessions/:id/complete', async (req, res) => {
   const revisions = req.body.revisions as Array<{ stepId: string; action: 'mark_wrong' | 'provide_guidance' | 'skip'; correction?: string; guidance?: string; shouldLearn?: boolean }> | undefined
   if (revisions && revisions.length > 0) {
     learnFromTrajectoryRevisions(revisions, session.payload as { title: string; steps: Array<{ id: string; label: string }> })
+  }
+
+  // Learn from code review rejections
+  if (session.type === 'code_review') {
+    learnFromCodeRejection(req.body as { approved: boolean; note?: string }, session.payload as Record<string, unknown>)
+  }
+
+  // Learn from action approval rejections
+  if (session.type === 'action_approval') {
+    learnFromActionRejection(req.body as { approved: boolean; note?: string }, session.payload as Record<string, unknown>)
   }
 
   // Send result back to OpenClaw
