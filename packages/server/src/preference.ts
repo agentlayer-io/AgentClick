@@ -67,8 +67,11 @@ export function learnFromDeletions(
   const deletions = actions.filter(a => a.type === 'delete')
   if (deletions.length === 0) return
 
+  // Support both Format A (payload.paragraphs) and Format B (payload.draft.paragraphs)
+  const draft = payload.draft as { paragraphs?: Paragraph[] } | undefined
+  const paragraphs = (draft?.paragraphs ?? payload.paragraphs ?? []) as Paragraph[]
   const paragraphMap = new Map<string, string>(
-    (payload.paragraphs ?? []).map(p => [p.id, p.content])
+    paragraphs.map(p => [p.id, p.content])
   )
 
   // Infer scope from session type
