@@ -17,7 +17,7 @@ interface EmailItem {
   from: string
   subject: string
   preview: string
-  category: 'Personal' | 'Work' | 'ADS' | string
+  category: 'Primary' | 'Social' | 'Promotions' | 'Updates' | 'Forums' | string
   timestamp: number
 }
 
@@ -75,10 +75,21 @@ function reasonLabel(key: string): string {
   return REASONS.find(r => r.key === key)?.label ?? key
 }
 
+function normalizeCategory(category: string): 'Primary' | 'Social' | 'Promotions' | 'Updates' | 'Forums' | string {
+  const value = category.trim()
+  if (value === 'Personal') return 'Primary'
+  if (value === 'ADS') return 'Promotions'
+  if (value === 'Work') return 'Updates'
+  return value
+}
+
 function categoryBadge(category: string) {
-  if (category === 'Personal') return 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-500'
-  if (category === 'ADS') return 'bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-400'
-  if (category === 'Work') return 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-slate-300'
+  const normalized = normalizeCategory(category)
+  if (normalized === 'Primary') return 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-500'
+  if (normalized === 'Social') return 'bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300'
+  if (normalized === 'Promotions') return 'bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-400'
+  if (normalized === 'Updates') return 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-slate-300'
+  if (normalized === 'Forums') return 'bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300'
   return 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-slate-400'
 }
 
@@ -414,7 +425,7 @@ export default function ReviewPage() {
                 >
                   <div className="flex items-center gap-1.5 mb-0.5">
                     <span className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0 ${categoryBadge(email.category)}`}>
-                      {email.category}
+                      {normalizeCategory(email.category)}
                     </span>
                     <span className="text-sm font-medium text-zinc-800 dark:text-slate-200 truncate flex-1 min-w-0">{email.from}</span>
                   </div>
@@ -535,7 +546,7 @@ export default function ReviewPage() {
                   <div className="border-t border-gray-100 dark:border-zinc-800 pt-6">
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${categoryBadge(email.category)}`}>
-                        {email.category}
+                        {normalizeCategory(email.category)}
                       </span>
                       <span className="text-xs text-zinc-400 dark:text-slate-500">{formatTimestamp(email.timestamp)}</span>
                     </div>
