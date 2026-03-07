@@ -79,6 +79,7 @@ interface SummaryResponse {
 
 type ParagraphState = 'normal' | 'deleted' | 'rewriting'
 type PendingAgentAction = 'regenerate' | 'readMore' | 'reply' | null
+type PageStatusState = 'opened' | 'active' | 'hidden' | 'submitted'
 
 // Keys must match REASON_LABELS in preference.ts
 const REASONS = [
@@ -230,6 +231,7 @@ export default function ReviewPage() {
   const [filterOpen, setFilterOpen] = useState(false)
   const [pendingAgentAction, setPendingAgentAction] = useState<PendingAgentAction>(null)
   const [activeReplyRequestEmailId, setActiveReplyRequestEmailId] = useState<string | null>(null)
+  const [replyDraftOpen, setReplyDraftOpen] = useState(false)
 
   const resetEditState = useCallback(() => {
     setActions([])
@@ -247,6 +249,25 @@ export default function ReviewPage() {
     setSubmitting(false)
   }, [])
 
+  const postPageStatus = useCallback(async (
+    state: PageStatusState,
+    options?: { stopMonitoring?: boolean; reason?: string },
+  ) => {
+    try {
+      await fetch(`/api/sessions/${id}/page-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          state,
+          stopMonitoring: options?.stopMonitoring === true,
+          reason: options?.reason,
+        }),
+      })
+    } catch {
+      // ignore page status failures
+    }
+  }, [id])
+
   useEffect(() => {
     fetch(`/api/sessions/${id}`)
       .then(r => r.json())
@@ -258,6 +279,22 @@ export default function ReviewPage() {
       })
       .catch(() => { setError(true); setLoading(false) })
   }, [id])
+
+  useEffect(() => {
+    void postPageStatus('opened')
+    const activeTimer = window.setInterval(() => {
+      void postPageStatus(document.visibilityState === 'visible' ? 'active' : 'hidden')
+    }, 10000)
+    const onVisibility = () => { void postPageStatus(document.visibilityState === 'visible' ? 'active' : 'hidden') }
+    const onBeforeUnload = () => { void postPageStatus('hidden', { reason: 'page_unload' }) }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => {
+      window.clearInterval(activeTimer)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('beforeunload', onBeforeUnload)
+    }
+  }, [postPageStatus])
 
   // Poll for payload updates while waiting for agent rewrite
   useEffect(() => {
@@ -553,6 +590,11 @@ export default function ReviewPage() {
     }
   }
 
+  const stopMonitoringAndLeave = async () => {
+    await postPageStatus('hidden', { stopMonitoring: true, reason: 'user_left_email_review' })
+    navigate('/')
+  }
+
   const hasInbox = payload && 'inbox' in payload && Array.isArray((payload as InboxPayload).inbox)
   const inboxPayloadForState = hasInbox ? payload as InboxPayload : null
   const selectedInboxEmail = inboxPayloadForState && selectedEmailId
@@ -717,7 +759,15 @@ export default function ReviewPage() {
         {/* Left Panel — Inbox List */}
         <div className="w-full md:w-72 md:shrink-0 bg-white dark:bg-zinc-900 border-b md:border-b-0 md:border-r border-gray-100 dark:border-zinc-800 overflow-y-auto max-h-[30vh] md:max-h-full">
           {!isCompleted && (
-            <button onClick={() => navigate('/')} className="text-sm text-zinc-400 dark:text-slate-500 hover:text-zinc-600 dark:hover:text-slate-300 transition-colors p-4 block border-b border-gray-50 dark:border-zinc-800 w-full text-left">← Back</button>
+            <div className="p-4 border-b border-gray-50 dark:border-zinc-800 space-y-2">
+              <button onClick={stopMonitoringAndLeave} className="text-sm text-zinc-400 dark:text-slate-500 hover:text-zinc-600 dark:hover:text-slate-300 transition-colors block w-full text-left">← Back</button>
+              <button
+                onClick={stopMonitoringAndLeave}
+                className="w-full text-xs font-medium px-3 py-2 rounded-lg border border-red-200 dark:border-red-900 text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+              >
+                Stop Agent Monitor
+              </button>
+            </div>
           )}
           <div className="p-4 border-b border-gray-50 dark:border-zinc-800 space-y-3">
             <div>
@@ -1025,98 +1075,111 @@ export default function ReviewPage() {
 
                 {activeDraft && (
                   <>
-                    <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg space-y-3">
+                    <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg">
                       <div className="flex items-center justify-between">
                         <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider">Reply Draft</p>
-                        {replyIsReady && (
-                          <span className="text-xs font-medium text-blue-600 dark:text-blue-300">Draft ready</span>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Reply To</label>
-                        <div className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-zinc-50 dark:bg-zinc-950 text-zinc-500 dark:text-slate-400">
-                          {activeDraft.replyTo}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">To</label>
-                        <div className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-zinc-50 dark:bg-zinc-950 text-zinc-500 dark:text-slate-400">
-                          {draftTo}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Subject</label>
-                        <input
-                          type="text"
-                          value={draftSubject}
-                          onChange={e => setDraftSubject(e.target.value)}
-                          className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Add Recipient</label>
-                        <div className="flex gap-2">
+                        <div className="flex items-center gap-3">
+                          {replyIsReady && (
+                            <span className="text-xs font-medium text-blue-600 dark:text-blue-300">Draft ready</span>
+                          )}
                           <button
                             type="button"
-                            onClick={() => setNewRecipientType(type => type === 'cc' ? 'bcc' : 'cc')}
-                            className="px-3 py-2 text-sm rounded border border-gray-200 dark:border-zinc-700 text-zinc-600 dark:text-slate-300"
-                            title="Toggle recipient type"
+                            onClick={() => setReplyDraftOpen(current => !current)}
+                            className="text-xs text-zinc-500 dark:text-slate-400 hover:text-zinc-700 dark:hover:text-slate-200"
                           >
-                            {newRecipientType.toUpperCase()} +
-                          </button>
-                          <input
-                            type="text"
-                            value={newRecipientValue}
-                            onChange={e => setNewRecipientValue(e.target.value)}
-                            placeholder={newRecipientType === 'cc' ? 'Add Cc address' : 'Add Bcc address'}
-                            className="flex-1 text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (newRecipientType === 'cc') setDraftCc(current => addUniqueAddress(current, newRecipientValue))
-                              else setDraftBcc(current => addUniqueAddress(current, newRecipientValue))
-                              setNewRecipientValue('')
-                            }}
-                            className="px-3 py-2 text-sm rounded border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-300"
-                            title="Add recipient"
-                          >
-                            +
+                            {replyDraftOpen ? 'Fold' : 'Unfold'}
                           </button>
                         </div>
                       </div>
-                      {draftCc.length > 0 && (
-                        <div>
-                          <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Cc</label>
-                          <div className="flex flex-wrap gap-2">
-                            {draftCc.map(email => (
-                              <button
-                                key={`cc-${email}`}
-                                type="button"
-                                onClick={() => setDraftCc(current => current.filter(value => value !== email))}
-                                className="text-xs px-2 py-1 rounded-full border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950 text-sky-700 dark:text-sky-300"
-                              >
-                                {email} ×
-                              </button>
-                            ))}
+                      {replyDraftOpen && (
+                        <div className="space-y-3 mt-3">
+                          <div>
+                            <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Reply To</label>
+                            <div className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-zinc-50 dark:bg-zinc-950 text-zinc-500 dark:text-slate-400">
+                              {activeDraft.replyTo}
+                            </div>
                           </div>
-                        </div>
-                      )}
-                      {draftBcc.length > 0 && (
-                        <div>
-                          <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Bcc</label>
-                          <div className="flex flex-wrap gap-2">
-                            {draftBcc.map(email => (
-                              <button
-                                key={`bcc-${email}`}
-                                type="button"
-                                onClick={() => setDraftBcc(current => current.filter(value => value !== email))}
-                                className="text-xs px-2 py-1 rounded-full border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950 text-violet-700 dark:text-violet-300"
-                              >
-                                {email} ×
-                              </button>
-                            ))}
+                          <div>
+                            <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">To</label>
+                            <div className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-zinc-50 dark:bg-zinc-950 text-zinc-500 dark:text-slate-400">
+                              {draftTo}
+                            </div>
                           </div>
+                          <div>
+                            <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Subject</label>
+                            <input
+                              type="text"
+                              value={draftSubject}
+                              onChange={e => setDraftSubject(e.target.value)}
+                              className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Add Recipient</label>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setNewRecipientType(type => type === 'cc' ? 'bcc' : 'cc')}
+                                className="px-3 py-2 text-sm rounded border border-gray-200 dark:border-zinc-700 text-zinc-600 dark:text-slate-300"
+                                title="Toggle recipient type"
+                              >
+                                {newRecipientType.toUpperCase()} +
+                              </button>
+                              <input
+                                type="text"
+                                value={newRecipientValue}
+                                onChange={e => setNewRecipientValue(e.target.value)}
+                                placeholder={newRecipientType === 'cc' ? 'Add Cc address' : 'Add Bcc address'}
+                                className="flex-1 text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (newRecipientType === 'cc') setDraftCc(current => addUniqueAddress(current, newRecipientValue))
+                                  else setDraftBcc(current => addUniqueAddress(current, newRecipientValue))
+                                  setNewRecipientValue('')
+                                }}
+                                className="px-3 py-2 text-sm rounded border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-300"
+                                title="Add recipient"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                          {draftCc.length > 0 && (
+                            <div>
+                              <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Cc</label>
+                              <div className="flex flex-wrap gap-2">
+                                {draftCc.map(email => (
+                                  <button
+                                    key={`cc-${email}`}
+                                    type="button"
+                                    onClick={() => setDraftCc(current => current.filter(value => value !== email))}
+                                    className="text-xs px-2 py-1 rounded-full border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950 text-sky-700 dark:text-sky-300"
+                                  >
+                                    {email} ×
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {draftBcc.length > 0 && (
+                            <div>
+                              <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Bcc</label>
+                              <div className="flex flex-wrap gap-2">
+                                {draftBcc.map(email => (
+                                  <button
+                                    key={`bcc-${email}`}
+                                    type="button"
+                                    onClick={() => setDraftBcc(current => current.filter(value => value !== email))}
+                                    className="text-xs px-2 py-1 rounded-full border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950 text-violet-700 dark:text-violet-300"
+                                  >
+                                    {email} ×
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

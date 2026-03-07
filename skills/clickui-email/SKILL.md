@@ -90,8 +90,13 @@ Use the Task tool to spawn a sub-agent. Pass it:
 
 Tell the sub-agent to follow the **Sub-Agent Instructions** section below.
 
-The main agent's job is done. The sub-agent handles all user interaction from here.
-Do NOT poll. Do NOT call `/wait` yourself. Do NOT start a new session.
+Preferred flow:
+- Spawn the sub-agent and let it own the session monitor loop.
+- If spawning the sub-agent fails, the main agent must take over the same monitor loop directly.
+- If blocking `/wait` is unavailable in your environment, poll `GET /api/sessions/${SESSION_ID}` every 10 seconds and inspect `status`, `result`, and `pageStatus`.
+
+The main agent's job is done only if the sub-agent is running correctly.
+Do NOT start a new session.
 
 When the sub-agent finishes, it returns the final confirmed result. Use that to send the email.
 
@@ -128,6 +133,24 @@ echo "$RESULT"
 
 `/wait` blocks server-side for up to 5 minutes. It returns the moment the user clicks Confirm or Regenerate. Do not add `sleep` before or after this call.
 
+Fallback if blocking is not possible:
+
+```bash
+while true; do
+  RESULT=$(curl -s "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/sessions/${SESSION_ID}")
+  STATUS=$(echo "$RESULT" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+  echo "STATUS=$STATUS"
+  echo "$RESULT"
+  sleep 10
+done
+```
+
+When using the fallback:
+- Check `status`
+- Check `result`
+- Check `pageStatus`
+- If `pageStatus.stopMonitoring` is `true`, stop the sub-agent or stop the main-agent monitor loop immediately
+
 #### B. Branch on STATUS
 
 **`completed`** → The user confirmed. Go to **Exit: Success** below.
@@ -146,6 +169,7 @@ The UI is an email client, not only a final approval page:
 - Do not block the user from browsing other emails while a reply is being prepared.
 - When a reply is requested, update the session payload promptly so the UI can show loading state for that email.
 - When the reply draft is ready, update the same email row so the UI can show a ready ring and an unread red dot for that email.
+- If the user clicks `Back` or the stop-monitor button in UI, the page will send `pageStatus.stopMonitoring = true`. Treat that as a direct signal to stop monitoring.
 
 Rewrite rules:
 - If `result.readMore` is true, fetch more emails for the requested categories and PUT an updated inbox payload. Keep existing email IDs and append or merge new ones.
@@ -244,8 +268,10 @@ Follow these UI assumptions when preparing or updating payloads:
 - The main email view should show the full email body, not only a preview snippet.
 - The sidebar snippet is only for compact scanning.
 - Reply draft generation is lazy: do not send a ready draft before the user clicks `Reply`, unless the user explicitly asked for an immediate draft.
+- The reply draft panel is folded by default when it first appears.
 - While a reply is being generated, the UI should be able to show loading for that email and still let the user browse other emails.
 - When a reply draft becomes ready, the corresponding email row should show a visible ready state and an unread red dot until the user opens that reply.
+- The UI may send a stop-monitor signal when the user leaves the page. Respect it and stop the sub-agent or monitor loop cleanly.
 - Fast updates matter. Prefer sending an immediate "loading" payload update, then a second payload update with the completed draft.
 
 ---

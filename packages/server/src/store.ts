@@ -39,6 +39,8 @@ try {
 export interface SessionPageStatus {
   state: 'created' | 'opened' | 'active' | 'hidden' | 'submitted'
   updatedAt: number
+  stopMonitoring?: boolean
+  reason?: string
 }
 
 export interface Session {

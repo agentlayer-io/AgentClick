@@ -456,7 +456,12 @@ app.post('/api/sessions/:id/page-status', (req, res) => {
   if (!['opened', 'active', 'hidden', 'submitted'].includes(state)) {
     return res.status(400).json({ error: 'Invalid page status state' })
   }
-  const pageStatus = { state: state as 'opened' | 'active' | 'hidden' | 'submitted', updatedAt: Date.now() }
+  const pageStatus = {
+    state: state as 'opened' | 'active' | 'hidden' | 'submitted',
+    updatedAt: Date.now(),
+    stopMonitoring: req.body?.stopMonitoring === true,
+    reason: typeof req.body?.reason === 'string' ? req.body.reason : undefined,
+  }
   updateSessionPageStatus(req.params.id, pageStatus)
   res.json({ ok: true, pageStatus })
 })
@@ -745,6 +750,13 @@ function buildActionSummary(result: Record<string, unknown>): string {
     lines.push(`- Edited draft ready${draftTo ? ` to ${draftTo}` : ''}${draftSubject ? ` with subject "${draftSubject}"` : ''}.`)
     if (cc.length > 0) lines.push(`- Added Cc: ${cc.join(', ')}`)
     if (bcc.length > 0) lines.push(`- Added Bcc: ${bcc.join(', ')}`)
+  }
+
+  const pageStatus = result.pageStatus && typeof result.pageStatus === 'object'
+    ? result.pageStatus as Record<string, unknown>
+    : null
+  if (pageStatus?.stopMonitoring === true) {
+    lines.push(`- User requested monitor stop${typeof pageStatus.reason === 'string' ? ` (${pageStatus.reason})` : ''}.`)
   }
 
   return lines.join('\n')
