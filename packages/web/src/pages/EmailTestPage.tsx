@@ -148,14 +148,6 @@ export default function EmailTestPage() {
       })
       if (!response.ok) throw new Error(`Create session failed: ${response.status}`)
       const data = await response.json() as { sessionId: string }
-      const monitorResponse = await fetch('/api/mock/email-monitor/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: data.sessionId }),
-      })
-      if (!monitorResponse.ok) {
-        throw new Error(`Mock monitor start failed: ${monitorResponse.status}`)
-      }
       navigate(`/review/${data.sessionId}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
