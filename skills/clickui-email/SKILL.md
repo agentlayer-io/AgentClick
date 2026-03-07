@@ -5,44 +5,39 @@ description: Use this skill when the user needs to review, triage, read, or repl
 
 # ClickUI Email Review
 
-## Trigger Conditions (high priority)
+## Trigger Conditions
 
-Use this skill by default when the user asks to review an inbox, read email in UI, triage email, or draft a reply in browser before sending.
+Use this skill when the user wants email handled in AgentClick UI instead of chat.
 
-Common trigger phrases include (Chinese or English):
-- "写好后让我审阅"
-- "先让我在浏览器里审阅"
-- "发之前让我看一下"
-- "先草拟邮件给我确认"
+Common triggers:
 - "write the email and let me review first"
 - "before sending, let me review"
 - "draft it and I will approve"
+- "review my inbox in UI"
+- "reply in browser"
+- "email UI review"
 
-If the request is email work plus human review in UI, prefer this skill over generic chat drafting.
+If the task is email work plus human review in UI, use this skill over generic chat drafting.
 
-## Do Not Use These Alternatives
+## Core Rules
 
-For email review requests handled by this skill:
-- Do NOT use the `browser` tool to manually render a draft
-- Do NOT use the `canvas` tool to manually render a draft
-- Do NOT ask the user to review the draft directly in chat first
+- Always create an AgentClick review session with `type: "email_review"`.
+- Treat the AgentClick page as the active email client for this task.
+- The same agent that creates the session must monitor and update it.
+- Do not start a helper process, fake monitor, server-side monitor, or detached subagent monitor.
+- If a true subagent exists in the caller environment and the user explicitly wants one, it may help fetch or draft, but the main responsibility still stays with the agent handling the session.
+- Show full email content in the payload. `preview` is only for the sidebar.
+- Do not pre-generate reply drafts unless the user explicitly asked for that before opening the page.
+- Reply generation is lazy: generate only after the user clicks `Reply`.
+- The reply text comes from the agent's own generation unless the user wired some other drafting system explicitly.
 
-Always submit to AgentClick via `POST /api/review` and let the user work inside the AgentClick UI.
-Submission opens the email review page for the active session. Treat that page as the user's email client for this task.
-
----
-
-## Live Session Workflow
-
-The same agent must create and monitor the session. Do not rely on a sub-agent, Task tool, or separate monitor process. Treat every email review as a live session.
-
-### Step 1: Ensure AgentClick is running
+## Step 1: Ensure AgentClick is running
 
 ```bash
 AGENTCLICK_BASE="${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-${PORT:-38173}}}"
 
 if ! curl -s --max-time 1 "$AGENTCLICK_BASE/api/health" > /dev/null 2>&1; then
-  npm run start &
+  npm start >/tmp/agentclick.log 2>&1 &
 
   for _ in $(seq 1 30); do
     if curl -s --max-time 1 "$AGENTCLICK_BASE/api/health" > /dev/null 2>&1; then
@@ -52,48 +47,60 @@ if ! curl -s --max-time 1 "$AGENTCLICK_BASE/api/health" > /dev/null 2>&1; then
   done
 fi
 
-curl -s --max-time 1 "$AGENTCLICK_BASE/api/health" > /dev/null 2>&1
+curl -s --max-time 1 "$AGENTCLICK_BASE/api/health"
 ```
 
-If the health check still fails after startup, stop and fix the server problem before creating a review session.
+If health still fails, stop and fix the server problem before creating a session.
 
-### Step 2: Build the inbox payload
+## Step 2: Fetch Gmail data with `gog`
 
-Fetch full email bodies in parallel when you need multiple messages. Do not fetch messages serially unless the provider or CLI forces it.
+Use `gog` to read Gmail. Prefer recent messages with full content.
 
-Use the bundled script:
-- Script: `skills/clickui-email/scripts/fetch_gmail_inbox_parallel.mjs`
-- Purpose: search Gmail with `gog`, fetch each full message in parallel, normalize it into AgentClick inbox format, and write JSON to disk
-
-Basic usage:
+Example search for 10 recent inbox emails:
 
 ```bash
-node skills/clickui-email/scripts/fetch_gmail_inbox_parallel.mjs \
-  --query 'is:unread' \
-  --max 10 \
-  --out /tmp/clickui_inbox.json
+gog gmail search --limit 10 'in:inbox'
 ```
 
-With explicit Gmail account and tuned concurrency:
+Example fetch for one message:
 
 ```bash
-node skills/clickui-email/scripts/fetch_gmail_inbox_parallel.mjs \
-  --query 'category:primary is:unread' \
-  --max 10 \
-  --account you@gmail.com \
-  --concurrency 5 \
-  --out /tmp/clickui_inbox.json
+gog gmail get <message_id>
 ```
 
-The script prints a small JSON summary and writes the inbox array to the path passed via `--out`.
-Load that file into the review payload instead of rebuilding the inbox JSON inline.
+Guidelines:
+- Prefer 10 recent emails unless the user asked for a different count.
+- Fetch full body and enough header data for the page to display a real email view.
+- Normalize categories to Gmail-style values when possible: `Primary`, `Social`, `Promotions`, `Updates`, `Forums`.
+- Build a compact `preview` for the sidebar, but keep full email text in `body`.
+- If `gog` returns thread-level data, normalize it into the inbox items the UI expects.
 
-### Step 3: Submit the email session
+Suggested inbox item shape:
 
-Write the request body to a temp file before POSTing. This is more reliable for full email bodies and special characters.
+```json
+{
+  "id": "gmail-message-id",
+  "category": "Updates",
+  "from": "Sender <sender@example.com>",
+  "to": ["me@example.com"],
+  "cc": [],
+  "bcc": [],
+  "subject": "Email subject",
+  "preview": "Short sidebar preview",
+  "body": "Full email body shown in the main panel",
+  "headers": {
+    "date": "Sat, 7 Mar 2026 10:30:00 -0500"
+  },
+  "read": false
+}
+```
+
+## Step 3: Create the review session
+
+Write the payload to disk before POSTing.
 
 ```bash
-cat > /tmp/clickui_review.json <<'JSON'
+cat > /tmp/clickui_email_review.json <<'JSON'
 {
   "type": "email_review",
   "sessionKey": "SESSION_KEY",
@@ -111,215 +118,152 @@ JSON
 
 RESPONSE=$(curl -s -X POST "$AGENTCLICK_BASE/api/review" \
   -H "Content-Type: application/json" \
-  -d @/tmp/clickui_review.json)
+  -d @/tmp/clickui_email_review.json)
+
 SESSION_ID=$(echo "$RESPONSE" | grep -o '"sessionId":"[^"]*"' | cut -d'"' -f4)
-echo "Session: $SESSION_ID"
+echo "$SESSION_ID"
 ```
 
-Rules for the initial payload:
-- Include the full original email in `body`. Do not rely on `preview` for review.
-- `preview` is only a short list snippet for the sidebar.
-- Do not generate a reply draft up front unless the user explicitly asked for one before opening the UI.
-- Default to `draft.paragraphs: []` until the user clicks `Reply`.
-- Normalize categories to Gmail-style values when possible: `Primary`, `Social`, `Promotions`, `Updates`, `Forums`.
+Payload rules:
+- Include real inbox data in `payload.inbox`.
+- Leave `payload.draft.paragraphs` empty unless the user asked for an initial draft before page open.
+- The page should open with full emails available, not only previews.
 
-### Step 4: Monitor the live session
+## Step 4: Monitor the session as the agent
 
-After creating the session, the same agent must own the monitor loop. Do NOT start a new session.
+After creating the session, the same agent must stay attached to it.
 
----
-
-## Monitor Instructions
-
-You are the dedicated monitor for an AgentClick email review session. You own the full interaction loop until the user confirms or the session times out.
-
-You have been given:
-- `SESSION_ID` — the active session
-- `inbox` — the inbox array
-- `draft` — the current reply draft object, which may be empty until the user clicks `Reply`
-
-Maintain a `ROUND` counter starting at 0 and a `LOG` list of actions taken each round.
-Maintain per-email UI state in memory:
-- `reply_loading[emailId]` — true while you are generating a reply draft
-- `reply_ready[emailId]` — true when the draft has arrived
-- `reply_unread[emailId]` — true when a newly generated reply draft is ready but the user has not opened it yet
-
-### Your loop
-
-Repeat until done (max 10 rewrite rounds):
-
-#### A. Block until user acts
+Preferred loop:
 
 ```bash
-RESULT=$(curl -s --max-time 310 \
-  "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/wait")
-STATUS=$(echo "$RESULT" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
-echo "STATUS=$STATUS"
-echo "$RESULT"
+curl -s --max-time 310 "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/wait"
 ```
 
-`/wait` blocks server-side for up to 5 minutes. It returns the moment the user clicks Confirm or Regenerate. Do not add `sleep` before or after this call.
-
-Fallback if blocking is not possible:
+Fallback if blocking is unavailable:
 
 ```bash
 while true; do
-  RESULT=$(curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}")
-  STATUS=$(echo "$RESULT" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
-  echo "STATUS=$STATUS"
-  echo "$RESULT"
+  curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}"
   sleep 10
 done
 ```
 
-When using the fallback:
-- Check `status`
-- Check `result`
-- Check `pageStatus`
-- If `pageStatus.stopMonitoring` is `true`, stop the monitor loop immediately
+When using the fallback, inspect:
+- `status`
+- `result`
+- `pageStatus`
 
-#### B. Branch on STATUS
+If `pageStatus.stopMonitoring` is `true`, stop immediately.
 
-**`completed`** → The user confirmed. Go to **Exit: Success** below.
+## Rewrite / Update Rules
 
-**`rewriting`** → The user wants changes. Go to step C, then loop back to A.
+When the session returns `status: "rewriting"`, inspect `result` and apply the minimum needed update.
 
-**HTTP 408 / empty STATUS** → `/wait` timed out. Go to **Exit: Timeout** below.
+The UI is not only a final approval screen. The user may:
+- read emails
+- mark emails as read
+- click `Reply` on one email while browsing others
+- request `Read More`
+- edit reply paragraphs directly
+- ask for a paragraph rewrite
+- stop monitoring from the page
 
-#### C. Rewrite and PUT (only when STATUS is `rewriting`)
+### Reply requests
 
-Read the full `result` object from the `/wait` response.
+If the result indicates `requestReplyDraft: true` for an email:
+- update the payload quickly so the UI can show that email as loading
+- generate the reply draft yourself as the agent
+- PUT the finished draft back into the same session
+- do not create a new session
 
-The UI is an email client, not only a final approval page:
-- The user may open multiple emails while you work.
-- The user may click `Reply` on one email while continuing to read others.
-- Do not block the user from browsing other emails while a reply is being prepared.
-- When a reply is requested, update the session payload promptly so the UI can show loading state for that email.
-- When the reply draft is ready, update the same email row so the UI can show a ready ring and an unread red dot for that email.
-- If the user clicks `Back` or the stop-monitor button in UI, the page will send `pageStatus.stopMonitoring = true`. Treat that as a direct signal to stop monitoring.
+The UI expects:
+- lazy reply generation
+- folded reply draft by default
+- the user can keep browsing while reply is loading
+- the email row can later show a ready state and unread dot when the draft arrives
 
-Rewrite rules:
-- If `result.readMore` is true, fetch more emails for the requested categories and PUT an updated inbox payload. Keep existing email IDs and append or merge new ones.
-- If the user marked emails as read, reflect that in your local state and sync that status back to the real email system if you control it.
-- If the user requested `Reply` for an email and no draft exists yet, generate the draft then PUT it into the payload for that email.
-- If `result.actions` contains paragraph edits, apply the minimum change needed to satisfy the feedback.
-- Only modify paragraphs referenced in `result.actions` unless the user explicitly requested a full rewrite.
-- Keep all other paragraph text exactly unchanged.
-- Keep `inbox`, `draft.subject`, `draft.to`, and `draft.replyTo` unchanged unless the user explicitly edited them in UI-supported fields.
+### Read more requests
 
-Write the payload to a temp file (required for stability with special characters), then PUT:
+If `result.readMore` is true:
+- fetch more Gmail emails with `gog`
+- keep the request scoped to the current category filter if the result includes categories
+- merge new emails into the current inbox payload instead of replacing the whole list unless replacement is explicitly intended
+
+### Read state changes
+
+If the user marks emails as read:
+- record which message ids changed
+- if the task includes Gmail sync, update Gmail through `gog`
+- reflect the new read state in the session payload
+
+### Draft edits
+
+If the user edits draft paragraphs in the page:
+- preserve their edits
+- only regenerate paragraphs the user explicitly asked to rewrite
+- keep `replyTo`, `to`, and `subject` stable unless the UI explicitly changed supported fields
+- CC and BCC additions from the page should be preserved and returned
+
+## PUT payload updates
+
+Always write the updated payload to a temp file before PUT.
 
 ```bash
-cat > /tmp/clickui_payload.json <<'JSON'
+cat > /tmp/clickui_email_payload.json <<'JSON'
 {
   "payload": {
-      "inbox": [SAME_INBOX_AS_SUBMITTED],
-      "draft": {
-        "replyTo": "SENDER_EMAIL",
-        "to": "RECIPIENT_EMAIL",
-        "subject": "Re: ORIGINAL_SUBJECT",
-        "paragraphs": [
-          {"id": "p1", "content": "UPDATED_OR_UNCHANGED_PARAGRAPH_1"},
-          {"id": "p2", "content": "UPDATED_OR_UNCHANGED_PARAGRAPH_2"},
-        {"id": "p3", "content": "UPDATED_OR_UNCHANGED_PARAGRAPH_3"}
+    "inbox": [],
+    "draft": {
+      "replyTo": "sender@example.com",
+      "to": "sender@example.com",
+      "subject": "Re: Original subject",
+      "paragraphs": [
+        {"id": "p1", "content": "Paragraph 1"},
+        {"id": "p2", "content": "Paragraph 2"}
       ]
     }
   }
 }
 JSON
 
-HTTP_CODE=$(curl -s -o /tmp/clickui_put_response.txt -w "%{http_code}" \
-  -X PUT "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/payload" \
+curl -s -X PUT "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/payload" \
   -H "Content-Type: application/json" \
-  -d @/tmp/clickui_payload.json)
-echo "PUT_HTTP=$HTTP_CODE"
-cat /tmp/clickui_put_response.txt
+  -d @/tmp/clickui_email_payload.json
 ```
 
-If HTTP is not `200`, fix the JSON and retry the PUT. Do not loop back to A with a failed PUT.
+Rules:
+- Reuse the same `SESSION_ID` for the full interaction.
+- If the UI asked for loading first, PUT a fast loading-state update, then PUT the completed draft.
+- If PUT fails, fix it before continuing.
 
-When preparing a first reply draft after the user clicks `Reply`, use the same PUT path:
-- First PUT a lightweight state update as soon as possible so the UI can show loading for that email.
-- Then generate the draft.
-- Then PUT the completed draft so the UI shows it as ready.
+## Completion Rules
 
-#### D. Report to main agent after each rewrite round
+When the user confirms:
+- treat the session as approved work
+- send the final email if that is part of the task
+- sync Gmail read state if the task requires it
+- do not ask the user again if they already confirmed in UI
 
-After a successful PUT, update your local state before looping:
-- Increment `ROUND`
-- Update your in-memory `draft` to the new content
-- Append to `LOG`: `"Round N: rewrote [paragraph IDs] — [user instruction]"`
+When the user stops monitoring from the page:
+- stop immediately
+- do not keep polling in the background
+- do not leave any detached monitor running
 
-Then **go back to step A**. The user will see the updated draft in the same browser tab.
+## UI Expectations
 
-**IMPORTANT:** Do NOT create a new session. Always reuse the same `SESSION_ID`.
+Assume the page behaves like this and update payloads accordingly:
+- Full email content is shown in the main panel.
+- Sidebar uses short preview text only.
+- Category filters may be folded by default.
+- `Read More` appears at the bottom of the email list.
+- Reply draft is folded by default.
+- Paragraphs can be edited directly and also individually rewritten.
+- When a draft becomes ready after a reply request, the corresponding email row may show a ready state and an unread marker until opened.
+- Clicking stop or back may set `pageStatus.stopMonitoring = true`.
 
----
+## Practical Notes
 
-### Exit: Success (STATUS = `completed`)
-
-Extract from the final `/wait` response:
-- `result.actions` — deletions and rewrites the user marked
-- `result.confirmed` — should be `true`
-- The final paragraph list from the session payload
-- Any emails marked read by the user
-- Any reply draft fields edited by the user in UI
-
-Output a structured report for the main agent:
-
-```
-MONITOR_RESULT: success
-SESSION_ID: <id>
-ROUNDS: <N>
-LOG:
-  - Round 1: <what changed>
-  - Round 2: <what changed>
-FINAL_DRAFT:
-  subject: <subject>
-  to: <recipient>
-  paragraphs:
-    - p1: <final content>
-    - p2: <final content>
-    - p3: <final content>
-EMAIL_STATE_CHANGES:
-  marked_read:
-    - <email id>
-INSTRUCTION: Send the email using the FINAL_DRAFT above, and sync any marked-read state. Do not ask the user again.
-```
-
-## UI Behavior Requirements
-
-Follow these UI assumptions when preparing or updating payloads:
-- The main email view should show the full email body, not only a preview snippet.
-- The sidebar snippet is only for compact scanning.
-- Reply draft generation is lazy: do not send a ready draft before the user clicks `Reply`, unless the user explicitly asked for an immediate draft.
-- The reply draft panel is folded by default when it first appears.
-- While a reply is being generated, the UI should be able to show loading for that email and still let the user browse other emails.
-- When a reply draft becomes ready, the corresponding email row should show a visible ready state and an unread red dot until the user opens that reply.
-- The UI may send a stop-monitor signal when the user leaves the page. Respect it and stop the monitor loop cleanly.
-- Fast updates matter. Prefer sending an immediate "loading" payload update, then a second payload update with the completed draft.
-
----
-
-### Exit: Timeout (HTTP 408 or empty STATUS)
-
-```
-MONITOR_RESULT: timeout
-SESSION_ID: <id>
-ROUNDS_COMPLETED: <N>
-LOG:
-  - Round 1: <what changed>
-INSTRUCTION: User did not respond within 5 minutes. Ask the user if they want to resume or cancel.
-```
-
----
-
-### Exit: Max rounds reached
-
-If `ROUND` reaches 10 without a `completed` status:
-
-```
-MONITOR_RESULT: max_rounds_reached
-SESSION_ID: <id>
-INSTRUCTION: The user requested 10+ rewrites without confirming. Ask the user how they want to proceed.
-```
+- Keep the monitor logic in the current agent turn when feasible.
+- If the environment cannot keep a long blocking wait, poll the session every 10 seconds instead.
+- Do not claim a reply came from Gmail or from a background process if the agent generated it.
+- Do not invent helper scripts that are not present in the repo.
