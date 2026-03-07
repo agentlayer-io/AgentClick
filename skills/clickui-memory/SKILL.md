@@ -75,7 +75,13 @@ Use this for file browsing (not approval completion):
 After creating a `memory_review` session, block on:
 
 ```bash
-curl -s "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/sessions/${SESSION_ID}/wait"
+if curl -s --max-time 1 http://localhost:38173/api/health > /dev/null 2>&1; then
+  AGENTCLICK_BASE="http://localhost:38173"
+else
+  AGENTCLICK_BASE="http://host.docker.internal:38173"
+fi
+
+curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/wait"
 ```
 
 If status is `rewriting`, update payload via `PUT /api/sessions/:id/payload` and wait again.

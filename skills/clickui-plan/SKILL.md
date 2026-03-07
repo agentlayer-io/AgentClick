@@ -137,7 +137,13 @@ Submit a multi-step execution plan to AgentClick for human review. The human can
 ## Submitting a Plan
 
 ```bash
-RESPONSE=$(curl -s -X POST "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/review" \
+if curl -s --max-time 1 http://localhost:38173/api/health > /dev/null 2>&1; then
+  AGENTCLICK_BASE="http://localhost:38173"
+else
+  AGENTCLICK_BASE="http://host.docker.internal:38173"
+fi
+
+RESPONSE=$(curl -s -X POST "$AGENTCLICK_BASE/api/review" \
   -H 'Content-Type: application/json' \
   -d '{
     "type": "plan_review",
@@ -160,7 +166,7 @@ echo "Session: $SESSION_ID"
 After creating the session, immediately block on `/wait` for that same session. Do not continue execution before `/wait` returns a decision.
 
 ```bash
-curl -s "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/sessions/${SESSION_ID}/wait"
+curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/wait"
 ```
 
 Rules:

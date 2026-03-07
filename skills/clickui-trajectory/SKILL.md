@@ -98,7 +98,13 @@ Submit a multi-step agent execution trajectory to AgentClick for human review. T
 ## Submitting a Trajectory
 
 ```bash
-curl -X POST "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/review" \
+if curl -s --max-time 1 http://localhost:38173/api/health > /dev/null 2>&1; then
+  AGENTCLICK_BASE="http://localhost:38173"
+else
+  AGENTCLICK_BASE="http://host.docker.internal:38173"
+fi
+
+curl -X POST "$AGENTCLICK_BASE/api/review" \
   -H 'Content-Type: application/json' \
   -d '{
     "type": "trajectory_review",

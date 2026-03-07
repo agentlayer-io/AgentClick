@@ -30,7 +30,13 @@ Escape each diff as a JSON string: replace newlines with `\n` and double-quotes 
 ## Step 2: Submit the command for review
 
 ```bash
-RESPONSE=$(curl -s -X POST "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/review" \
+if curl -s --max-time 1 http://localhost:38173/api/health > /dev/null 2>&1; then
+  AGENTCLICK_BASE="http://localhost:38173"
+else
+  AGENTCLICK_BASE="http://host.docker.internal:38173"
+fi
+
+RESPONSE=$(curl -s -X POST "$AGENTCLICK_BASE/api/review" \
   -H "Content-Type: application/json" \
   -d '{
     "type": "code_review",
@@ -85,7 +91,7 @@ If you cannot generate a diff (e.g. the command doesn't touch tracked files), om
 ## Step 3: Wait for decision (blocks up to 5 minutes)
 
 ```bash
-curl -s "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/sessions/${SESSION_ID}/wait"
+curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/wait"
 ```
 
 The browser opens automatically. This call blocks until the user approves or rejects.

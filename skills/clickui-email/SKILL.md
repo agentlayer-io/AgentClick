@@ -143,7 +143,7 @@ Fallback if blocking is not possible:
 
 ```bash
 while true; do
-  RESULT=$(curl -s "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/sessions/${SESSION_ID}")
+  RESULT=$(curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}")
   STATUS=$(echo "$RESULT" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
   echo "STATUS=$STATUS"
   echo "$RESULT"

@@ -10,7 +10,13 @@ When you are about to take a high-risk action (sending messages, deleting data, 
 ## Step 1: Submit for approval
 
 ```bash
-RESPONSE=$(curl -s -X POST "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/review" \
+if curl -s --max-time 1 http://localhost:38173/api/health > /dev/null 2>&1; then
+  AGENTCLICK_BASE="http://localhost:38173"
+else
+  AGENTCLICK_BASE="http://host.docker.internal:38173"
+fi
+
+RESPONSE=$(curl -s -X POST "$AGENTCLICK_BASE/api/review" \
   -H "Content-Type: application/json" \
   -d '{
     "type": "action_approval",
@@ -30,7 +36,7 @@ Save the `sessionId` from the response.
 
 ```bash
 SESSION_ID="<sessionId from Step 1>"
-curl -s "${AGENTCLICK_URL:-http://localhost:${AGENTCLICK_PORT:-38173}}/api/sessions/${SESSION_ID}/wait"
+curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/wait"
 ```
 
 The browser opens automatically. This call blocks until the user submits.
