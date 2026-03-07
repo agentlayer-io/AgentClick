@@ -30,7 +30,6 @@ const README_PATH = join(__dirname, '../../../README.md')
 const SHOULD_SERVE_BUILT_WEB = existsSync(WEB_DIST_DIR) && (__filename.endsWith('/dist/index.js') || process.env.NODE_ENV === 'production')
 const WEB_ORIGIN = process.env.WEB_ORIGIN || (SHOULD_SERVE_BUILT_WEB ? `http://localhost:${PORT}` : 'http://localhost:5173')
 const execFileAsync = promisify(execFile)
-const gmailMonitors = new Map<string, { running: boolean }>()
 
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
@@ -72,29 +71,6 @@ function createSessionId(): string {
   return id
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-function firstNonEmpty(...values: Array<string | undefined>): string {
-  for (const value of values) {
-    if (value && value.trim().length > 0) return value.trim()
-  }
-  return ''
-}
-
-function gmailCategoryFromLabels(labels: string[]): string {
-  if (labels.includes('CATEGORY_PROMOTIONS')) return 'Promotions'
-  if (labels.includes('CATEGORY_SOCIAL')) return 'Social'
-  if (labels.includes('CATEGORY_UPDATES')) return 'Updates'
-  if (labels.includes('CATEGORY_FORUMS')) return 'Forums'
-  return 'Primary'
-}
-
-function textPreview(text: string): string {
-  return text.replace(/\s+/g, ' ').trim().slice(0, 160)
-}
-
 function bodyToParagraphs(text: string): Array<{ id: string; content: string }> {
   return text
     .split(/\n{2,}/)
@@ -112,31 +88,6 @@ async function runGog(args: string[]): Promise<string> {
 async function runGogJson<T>(args: string[]): Promise<T> {
   const stdout = await runGog(args)
   return JSON.parse(stdout) as T
-}
-
-type GogSearchThread = {
-  id: string
-  subject?: string
-  from?: string
-  date?: string
-  labels?: string[]
-  messageCount?: number
-}
-
-type GogThreadMessage = {
-  id: string
-  internalDate?: string
-  labelIds?: string[]
-}
-
-type GogThreadGet = {
-  body?: string
-  headers?: Record<string, string>
-  message?: GogThreadMessage
-  thread?: {
-    id: string
-    messages: GogThreadMessage[]
-  }
 }
 
 type GmailReviewEmail = {
@@ -186,45 +137,6 @@ function buildReplyDraftFromEmail(email: GmailReviewEmail) {
       { id: 'intent_followup', text: 'Ask for the latest update' },
     ],
   }
-}
-
-async function fetchUnreadInboxEmails(max: number): Promise<GmailReviewEmail[]> {
-  const threads = await runGogJson<GogSearchThread[]>(['gmail', 'search', 'is:unread in:inbox', '--max', String(max), '--json', '--results-only', '--no-input'])
-  const emails = await Promise.all(threads.map(async thread => {
-    const detail = await runGogJson<GogThreadGet>(['gmail', 'thread', 'get', thread.id, '--json', '--full', '--results-only', '--no-input'])
-    const headers = detail.headers ?? {}
-    const body = firstNonEmpty(detail.body, thread.subject ? `${thread.subject}\n\n${thread.from ?? ''}` : 'No content available.')
-    const messages = detail.thread?.messages ?? (detail.message ? [detail.message] : [])
-    const latestMessage = messages[messages.length - 1]
-    const labelIds = latestMessage?.labelIds ?? thread.labels ?? []
-    const subject = firstNonEmpty(headers.subject, thread.subject, 'No subject')
-    const from = firstNonEmpty(headers.from, thread.from, 'Unknown sender')
-    const to = firstNonEmpty(headers.to, process.env.GOG_ACCOUNT, '')
-    const cc = headers.cc ? headers.cc.split(',').map(value => value.trim()).filter(Boolean) : []
-    const bcc = headers.bcc ? headers.bcc.split(',').map(value => value.trim()).filter(Boolean) : []
-    const headerList = Object.entries(headers)
-      .filter(([, value]) => typeof value === 'string' && value.trim().length > 0)
-      .slice(0, 8)
-      .map(([label, value]) => ({ label: label[0].toUpperCase() + label.slice(1), value }))
-    return {
-      id: thread.id,
-      from,
-      to,
-      cc,
-      bcc,
-      subject,
-      preview: textPreview(body),
-      body,
-      headers: headerList,
-      unread: labelIds.includes('UNREAD'),
-      category: gmailCategoryFromLabels(labelIds),
-      timestamp: Number(latestMessage?.internalDate ?? 0),
-      gmailThreadId: thread.id,
-      gmailMessageId: latestMessage?.id ?? thread.id,
-      replyState: 'idle' as const,
-    }
-  }))
-  return emails.sort((a, b) => b.timestamp - a.timestamp)
 }
 
 async function createOrUpdateGmailDraft(email: GmailReviewEmail, editedDraft: Record<string, unknown>): Promise<string> {
@@ -279,109 +191,6 @@ async function sendGmailDraft(draftId: string): Promise<void> {
   await runGog(['gmail', 'drafts', 'send', draftId, '--json', '--results-only', '--no-input'])
 }
 
-async function startGmailMonitor(sessionId: string): Promise<void> {
-  if (gmailMonitors.get(sessionId)?.running) return
-  gmailMonitors.set(sessionId, { running: true })
-  try {
-    while (true) {
-      const session = getSession(sessionId)
-      if (!session) break
-      if (session.pageStatus?.stopMonitoring) break
-      if (session.status === 'completed') break
-      if (session.status !== 'rewriting') {
-        await sleep(1000)
-        continue
-      }
-
-      const payload = session.payload as Record<string, unknown>
-      const result = (session.result ?? {}) as Record<string, unknown>
-      const inbox = Array.isArray(payload.inbox) ? payload.inbox as GmailReviewEmail[] : []
-      const defaultDraft = payload.draft as Record<string, unknown> | undefined
-
-      if (result.requestReplyDraft) {
-        const emailId = String(result.emailId ?? '')
-        const targetEmail = inbox.find(email => email.id === emailId)
-        if (!targetEmail) {
-          updateSessionPayload(sessionId, payload)
-          continue
-        }
-        const replyDraft = buildReplyDraftFromEmail(targetEmail)
-        const draftId = await createOrUpdateGmailDraft(targetEmail, {
-          to: replyDraft.to,
-          subject: replyDraft.subject,
-          body: replyDraft.paragraphs.map(p => p.content).join('\n\n'),
-          cc: [],
-          bcc: [],
-        })
-        updateSessionPayload(sessionId, {
-          ...payload,
-          inbox: inbox.map(email => email.id === emailId ? {
-            ...email,
-            gmailDraftId: draftId,
-            replyState: 'ready',
-            replyUnread: true,
-            replyDraft,
-          } : email),
-          draft: defaultDraft,
-        })
-        continue
-      }
-
-      if (result.readMore) {
-        const existingIds = new Set(inbox.map(email => email.id))
-        const moreEmails = (await fetchUnreadInboxEmails(Math.max(inbox.length + 10, 20))).filter(email => !existingIds.has(email.id))
-        updateSessionPayload(sessionId, {
-          ...payload,
-          inbox: [...inbox, ...moreEmails],
-          draft: defaultDraft,
-        })
-        continue
-      }
-
-      const editedDraft = result.editedDraft && typeof result.editedDraft === 'object'
-        ? result.editedDraft as Record<string, unknown>
-        : null
-      const editedEmailId = typeof editedDraft?.emailId === 'string' ? editedDraft.emailId : ''
-      if (editedDraft && editedEmailId) {
-        const targetEmail = inbox.find(email => email.id === editedEmailId)
-        if (!targetEmail) {
-          updateSessionPayload(sessionId, payload)
-          continue
-        }
-        const draftId = await createOrUpdateGmailDraft(targetEmail, editedDraft)
-        const body = typeof editedDraft.body === 'string' ? editedDraft.body : ''
-        const paragraphs = Array.isArray(editedDraft.paragraphs)
-          ? editedDraft.paragraphs as Array<{ id: string; content: string }>
-          : bodyToParagraphs(body)
-        updateSessionPayload(sessionId, {
-          ...payload,
-          inbox: inbox.map(email => email.id === editedEmailId ? {
-            ...email,
-            gmailDraftId: draftId,
-            replyState: 'ready',
-            replyUnread: true,
-            replyDraft: {
-              replyTo: email.from,
-              to: typeof editedDraft.to === 'string' ? editedDraft.to : email.from,
-              subject: typeof editedDraft.subject === 'string' ? editedDraft.subject : `Re: ${email.subject}`,
-              paragraphs,
-              cc: Array.isArray(editedDraft.cc) ? editedDraft.cc as string[] : [],
-              bcc: Array.isArray(editedDraft.bcc) ? editedDraft.bcc as string[] : [],
-            },
-          } : email),
-          draft: defaultDraft,
-        })
-        continue
-      }
-
-      await sleep(1000)
-    }
-  } catch (err) {
-    console.error('[agentclick] Gmail monitor failed:', err)
-  } finally {
-    gmailMonitors.delete(sessionId)
-  }
-}
 
 // Lightweight identity endpoint so clients can verify the service is AgentClick.
 app.get('/api/identity', (_req, res) => {
@@ -564,42 +373,6 @@ app.post('/api/review', async (req, res) => {
   }
 
   res.json({ sessionId: id, url })
-})
-
-app.post('/api/gmail/review/start', async (req, res) => {
-  try {
-    const max = typeof req.body?.max === 'number' ? Math.max(1, Math.min(20, req.body.max)) : 10
-    const inbox = await fetchUnreadInboxEmails(max)
-    const now = Date.now()
-    const id = createSessionId()
-    createSession({
-      id,
-      type: 'email_review',
-      payload: {
-        inbox,
-        draft: {
-          replyTo: '',
-          to: '',
-          subject: '',
-          paragraphs: [],
-        },
-      },
-      sessionKey: typeof req.body?.sessionKey === 'string' ? req.body.sessionKey : undefined,
-      status: 'pending',
-      pageStatus: { state: 'created', updatedAt: now },
-      createdAt: now,
-      updatedAt: now,
-      revision: 0,
-    })
-    void startGmailMonitor(id)
-    const url = `${WEB_ORIGIN}/review/${id}`
-    if (req.body?.noOpen !== true) {
-      await open(url)
-    }
-    res.json({ ok: true, sessionId: id, url, count: inbox.length })
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
-  }
 })
 
 app.get('/api/memory/files', (req, res) => {
