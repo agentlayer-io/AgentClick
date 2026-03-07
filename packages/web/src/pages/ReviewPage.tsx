@@ -132,6 +132,26 @@ function textToParagraphs(text: string): Paragraph[] {
     .map((content, index) => ({ id: `edited_${index + 1}`, content }))
 }
 
+function buildEditedParagraphs(
+  paragraphs: Paragraph[],
+  states: Record<string, ParagraphState>,
+  rewriteInput: Record<string, string>,
+): Paragraph[] {
+  return paragraphs.flatMap(paragraph => {
+    const state = states[paragraph.id] || 'normal'
+    if (state === 'deleted') return []
+    if (state === 'rewriting') {
+      const edited = rewriteInput[paragraph.id]?.trim()
+      return edited ? [{ ...paragraph, content: edited }] : [paragraph]
+    }
+    const edited = rewriteInput[paragraph.id]?.trim()
+    if (edited && edited !== paragraph.content) {
+      return [{ ...paragraph, content: edited }]
+    }
+    return [paragraph]
+  })
+}
+
 function addUniqueAddress(list: string[], value: string): string[] {
   const trimmed = value.trim()
   if (!trimmed) return list
@@ -172,7 +192,6 @@ export default function ReviewPage() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
   const [draftTo, setDraftTo] = useState('')
   const [draftSubject, setDraftSubject] = useState('')
-  const [draftBody, setDraftBody] = useState('')
   const [draftCc, setDraftCc] = useState<string[]>([])
   const [draftBcc, setDraftBcc] = useState<string[]>([])
   const [newRecipientType, setNewRecipientType] = useState<'cc' | 'bcc'>('cc')
@@ -190,7 +209,6 @@ export default function ReviewPage() {
     setSelectedIntents({})
     setDraftTo('')
     setDraftSubject('')
-    setDraftBody('')
     setDraftCc([])
     setDraftBcc([])
     setSelectedCategories([])
@@ -247,19 +265,31 @@ export default function ReviewPage() {
   }
 
   const startRewrite = (pid: string) => {
+    const sourceParagraph = hasInbox
+      ? activeDraftForState?.paragraphs.find(paragraph => paragraph.id === pid)
+      : (payload as EmailPayload | null)?.paragraphs?.find(paragraph => paragraph.id === pid)
     setStates(s => ({ ...s, [pid]: 'rewriting' }))
+    setRewriteInput(current => ({
+      ...current,
+      [pid]: current[pid] ?? sourceParagraph?.content ?? '',
+    }))
   }
 
   const confirmRewrite = (pid: string) => {
-    const instruction = rewriteInput[pid]
-    if (!instruction) return
-    setStates(s => ({ ...s, [pid]: 'deleted' }))
-    setActions(a => [...a.filter(x => x.paragraphId !== pid), { type: 'rewrite', paragraphId: pid, instruction }])
+    const editedText = rewriteInput[pid]?.trim()
+    if (!editedText) return
+    setStates(s => ({ ...s, [pid]: 'normal' }))
+    setActions(a => [...a.filter(x => x.paragraphId !== pid), { type: 'rewrite', paragraphId: pid, instruction: editedText }])
   }
 
   const undoParagraph = (pid: string) => {
     setStates(s => ({ ...s, [pid]: 'normal' }))
     setActions(a => a.filter(x => x.paragraphId !== pid))
+    setRewriteInput(current => {
+      const next = { ...current }
+      delete next[pid]
+      return next
+    })
   }
 
   const handleViewEmail = (email: EmailItem) => {
@@ -305,6 +335,9 @@ export default function ReviewPage() {
     setSubmitting(true)
     const hasInbox = payload && 'inbox' in payload && Array.isArray((payload as InboxPayload).inbox)
     const selectedIntentsList = Object.keys(selectedIntents).map(intentId => ({ id: intentId, accepted: true }))
+    const editedDraftParagraphs = hasInbox
+      ? buildEditedParagraphs(activeDraftForState?.paragraphs ?? [], states, rewriteInput)
+      : []
     const body = hasInbox
       ? JSON.stringify({
           actions,
@@ -323,8 +356,8 @@ export default function ReviewPage() {
             cc: draftCc,
             bcc: draftBcc,
             subject: draftSubject,
-            body: draftBody,
-            paragraphs: textToParagraphs(draftBody),
+            body: paragraphsToText(editedDraftParagraphs),
+            paragraphs: editedDraftParagraphs,
           },
         })
       : JSON.stringify({ actions, confirmed, regenerate: !confirmed })
@@ -364,7 +397,6 @@ export default function ReviewPage() {
     if (!activeDraftForState) return
     setDraftTo(activeDraftForState.to)
     setDraftSubject(activeDraftForState.subject)
-    setDraftBody(paragraphsToText(activeDraftForState.paragraphs))
     setDraftCc(activeDraftForState.cc ?? selectedInboxEmail?.cc ?? [])
     setDraftBcc(activeDraftForState.bcc ?? selectedInboxEmail?.bcc ?? [])
   }, [activeDraftForState?.to, activeDraftForState?.subject, activeDraftForState?.paragraphs, activeDraftForState?.cc, activeDraftForState?.bcc, selectedInboxEmail?.cc, selectedInboxEmail?.bcc])
@@ -428,6 +460,8 @@ export default function ReviewPage() {
       paragraphs.map(p => {
         const state = states[p.id] || 'normal'
         const action = actions.find(a => a.paragraphId === p.id)
+        const editedValue = rewriteInput[p.id]
+        const hasEditedValue = typeof editedValue === 'string' && editedValue.trim().length > 0 && editedValue !== p.content
 
         if (state === 'deleted') return (
           <div key={p.id} className="space-y-1">
@@ -455,15 +489,14 @@ export default function ReviewPage() {
         if (state === 'rewriting') return (
           <div key={p.id} className="space-y-1">
             <div className="p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
-              <p className="text-sm text-gray-500 dark:text-slate-400 mb-2 whitespace-pre-wrap">{p.content}</p>
-              <input
+              <textarea
                 className="w-full text-sm border border-blue-200 dark:border-blue-700 rounded px-3 py-2 mb-2 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                placeholder="How should it be rewritten? (e.g. more direct, no formalities)"
+                rows={Math.max(3, Math.ceil((rewriteInput[p.id] || p.content).length / 90))}
                 value={rewriteInput[p.id] || ''}
                 onChange={e => setRewriteInput(r => ({ ...r, [p.id]: e.target.value }))}
               />
               <div className="flex gap-2">
-                <button onClick={() => confirmRewrite(p.id)} className="text-xs bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300">Confirm</button>
+                <button onClick={() => confirmRewrite(p.id)} className="text-xs bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300">Apply</button>
                 <button onClick={() => undoParagraph(p.id)} className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-300 rounded">Cancel</button>
               </div>
             </div>
@@ -472,8 +505,10 @@ export default function ReviewPage() {
 
         return (
           <div key={p.id} className="space-y-1">
-            <div className="p-4 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg">
-              <p className="text-sm text-gray-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{p.content}</p>
+            <div className={`p-4 border rounded-lg ${hasEditedValue ? 'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800' : 'bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800'}`}>
+              <p className={`text-sm leading-relaxed whitespace-pre-wrap ${hasEditedValue ? 'text-blue-700 dark:text-blue-200' : 'text-gray-700 dark:text-slate-300'}`}>
+                {hasEditedValue ? editedValue : p.content}
+              </p>
             </div>
             <div className="flex justify-end gap-1">
               <button
@@ -838,15 +873,10 @@ export default function ReviewPage() {
                       </div>
                     </div>
                   )}
-                  <div>
-                    <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Reply Body</label>
-                    <textarea
-                      value={draftBody}
-                      onChange={e => setDraftBody(e.target.value)}
-                      rows={8}
-                      className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    />
-                  </div>
+                </div>
+
+                <div className="space-y-5 mb-8">
+                  {renderParagraphs(activeDraft.paragraphs)}
                 </div>
 
                 {/* Waiting for rewrite indicator */}
@@ -965,6 +995,8 @@ export default function ReviewPage() {
           {legacyPayload.paragraphs.map(p => {
             const state = states[p.id] || 'normal'
             const action = actions.find(a => a.paragraphId === p.id)
+            const editedValue = rewriteInput[p.id]
+            const hasEditedValue = typeof editedValue === 'string' && editedValue.trim().length > 0 && editedValue !== p.content
 
             if (state === 'deleted') return (
               <div key={p.id} className="space-y-1">
@@ -991,15 +1023,14 @@ export default function ReviewPage() {
 
             if (state === 'rewriting') return (
               <div key={p.id} className="p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
-                <p className="text-sm text-gray-500 dark:text-slate-400 mb-2 whitespace-pre-wrap">{p.content}</p>
-                <input
+                <textarea
                   className="w-full text-sm border border-blue-200 dark:border-blue-700 rounded px-3 py-2 mb-2 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                  placeholder="How should it be rewritten? (e.g. more direct, no formalities)"
+                  rows={Math.max(3, Math.ceil((rewriteInput[p.id] || p.content).length / 90))}
                   value={rewriteInput[p.id] || ''}
                   onChange={e => setRewriteInput(r => ({ ...r, [p.id]: e.target.value }))}
                 />
                 <div className="flex gap-2">
-                  <button onClick={() => confirmRewrite(p.id)} className="text-xs bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300">Confirm</button>
+                  <button onClick={() => confirmRewrite(p.id)} className="text-xs bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-300">Apply</button>
                   <button onClick={() => undoParagraph(p.id)} className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-300 rounded">Cancel</button>
                 </div>
               </div>
@@ -1007,8 +1038,10 @@ export default function ReviewPage() {
 
             return (
               <div key={p.id} className="space-y-1">
-                <div className="p-4 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg">
-                  <p className="text-sm text-gray-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{p.content}</p>
+                <div className={`p-4 border rounded-lg ${hasEditedValue ? 'bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800' : 'bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800'}`}>
+                  <p className={`text-sm leading-relaxed whitespace-pre-wrap ${hasEditedValue ? 'text-blue-700 dark:text-blue-200' : 'text-gray-700 dark:text-slate-300'}`}>
+                    {hasEditedValue ? editedValue : p.content}
+                  </p>
                 </div>
                 <div className="flex justify-end gap-1">
                   <button
