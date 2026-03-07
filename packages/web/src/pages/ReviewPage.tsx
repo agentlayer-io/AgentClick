@@ -34,6 +34,8 @@ interface EmailItem {
   body?: string
   headers?: Array<{ label: string; value: string }>
   unread?: boolean
+  replyState?: 'idle' | 'loading' | 'ready'
+  replyUnread?: boolean
   replyDraft?: DraftPayload
   category: 'Primary' | 'Social' | 'Promotions' | 'Updates' | 'Forums' | string
   timestamp: number
@@ -76,7 +78,7 @@ interface SummaryResponse {
 }
 
 type ParagraphState = 'normal' | 'deleted' | 'rewriting'
-type PendingAgentAction = 'regenerate' | 'readMore' | null
+type PendingAgentAction = 'regenerate' | 'readMore' | 'reply' | null
 
 // Keys must match REASON_LABELS in preference.ts
 const REASONS = [
@@ -184,6 +186,14 @@ function mergeInboxEmails(currentInbox: EmailItem[], incomingInbox: EmailItem[])
   return Array.from(merged.values()).sort((a, b) => b.timestamp - a.timestamp)
 }
 
+function updateInboxEmail(
+  inbox: EmailItem[],
+  emailId: string,
+  updater: (email: EmailItem) => EmailItem,
+): EmailItem[] {
+  return inbox.map(email => email.id === emailId ? updater(email) : email)
+}
+
 export default function ReviewPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -219,6 +229,7 @@ export default function ReviewPage() {
   const [summaryError, setSummaryError] = useState<string | null>(null)
   const [filterOpen, setFilterOpen] = useState(false)
   const [pendingAgentAction, setPendingAgentAction] = useState<PendingAgentAction>(null)
+  const [activeReplyRequestEmailId, setActiveReplyRequestEmailId] = useState<string | null>(null)
 
   const resetEditState = useCallback(() => {
     setActions([])
@@ -257,27 +268,47 @@ export default function ReviewPage() {
         if (data.revision > revisionRef.current) {
           revisionRef.current = data.revision
           setPayload(currentPayload => {
-            if (pendingAgentAction !== 'readMore') return data.payload as EmailPayload | InboxPayload
             if (!currentPayload || !('inbox' in currentPayload) || !Array.isArray(currentPayload.inbox)) {
               return data.payload as EmailPayload | InboxPayload
             }
             const nextPayload = data.payload as ReviewSessionPayload
             if (!Array.isArray(nextPayload.inbox)) return data.payload as EmailPayload | InboxPayload
+            if (pendingAgentAction === 'readMore' || pendingAgentAction === 'reply') {
+              const mergedInbox = mergeInboxEmails(currentPayload.inbox, nextPayload.inbox).map(email => {
+                if (
+                  pendingAgentAction === 'reply' &&
+                  activeReplyRequestEmailId &&
+                  email.id === activeReplyRequestEmailId &&
+                  selectedEmailId === activeReplyRequestEmailId &&
+                  rightView === 'draft' &&
+                  email.replyState === 'ready'
+                ) {
+                  return { ...email, replyUnread: false }
+                }
+                return email
+              })
+              return {
+                ...nextPayload,
+                inbox: mergedInbox,
+                draft: nextPayload.draft ?? currentPayload.draft,
+              } as InboxPayload
+            }
             return {
               ...nextPayload,
-              inbox: mergeInboxEmails(currentPayload.inbox, nextPayload.inbox),
+              inbox: nextPayload.inbox,
               draft: nextPayload.draft ?? currentPayload.draft,
             } as InboxPayload
           })
-          resetEditState()
+          if (pendingAgentAction === 'regenerate') resetEditState()
           setWaitingForRewrite(false)
           setPendingAgentAction(null)
+          setActiveReplyRequestEmailId(null)
           setRightView('draft')
         }
       } catch { /* ignore polling errors */ }
     }, 1500)
     return () => clearInterval(interval)
-  }, [waitingForRewrite, id, pendingAgentAction, resetEditState])
+  }, [waitingForRewrite, id, pendingAgentAction, activeReplyRequestEmailId, selectedEmailId, rightView, resetEditState])
 
   // Cmd+Enter to confirm & send
   useEffect(() => {
@@ -336,13 +367,76 @@ export default function ReviewPage() {
   }
 
   const handleViewEmail = (email: EmailItem) => {
+    if (email.replyUnread) {
+      setPayload(currentPayload => {
+        if (!currentPayload || !('inbox' in currentPayload)) return currentPayload
+        return {
+          ...currentPayload,
+          inbox: updateInboxEmail(currentPayload.inbox, email.id, current => ({ ...current, replyUnread: false })),
+        }
+      })
+    }
     setSelectedEmailId(email.id)
     setRightView('email')
+  }
+
+  const requestReplyDraft = async (email: EmailItem) => {
+    setPayload(currentPayload => {
+      if (!currentPayload || !('inbox' in currentPayload)) return currentPayload
+      return {
+        ...currentPayload,
+        inbox: updateInboxEmail(currentPayload.inbox, email.id, current => ({
+          ...current,
+          replyState: 'loading',
+          replyUnread: false,
+        })),
+      }
+    })
+    setPendingAgentAction('reply')
+    setActiveReplyRequestEmailId(email.id)
+    const result = await fetch(`/api/sessions/${id}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        confirmed: false,
+        regenerate: true,
+        requestReplyDraft: true,
+        emailId: email.id,
+        emailSubject: email.subject,
+      }),
+    }).then(r => r.json())
+
+    if (result.rewriting) {
+      setWaitingForRewrite(true)
+      return
+    }
+
+    setPendingAgentAction(null)
+    setActiveReplyRequestEmailId(null)
+    setPayload(currentPayload => {
+      if (!currentPayload || !('inbox' in currentPayload)) return currentPayload
+      return {
+        ...currentPayload,
+        inbox: updateInboxEmail(currentPayload.inbox, email.id, current => ({ ...current, replyState: 'idle' })),
+      }
+    })
   }
 
   const handleReply = (email: EmailItem) => {
     setSelectedEmailId(email.id)
     setRightView('draft')
+    if (email.replyUnread) {
+      setPayload(currentPayload => {
+        if (!currentPayload || !('inbox' in currentPayload)) return currentPayload
+        return {
+          ...currentPayload,
+          inbox: updateInboxEmail(currentPayload.inbox, email.id, current => ({ ...current, replyUnread: false })),
+        }
+      })
+    }
+    if (!email.replyDraft && email.replyState !== 'loading') {
+      void requestReplyDraft(email)
+    }
   }
 
   const handleMarkAsRead = (emailId: string) => {
@@ -465,7 +559,7 @@ export default function ReviewPage() {
     ? inboxPayloadForState.inbox.find(email => email.id === selectedEmailId) ?? null
     : null
   const activeDraftForState = inboxPayloadForState
-    ? (selectedInboxEmail?.replyDraft ?? inboxPayloadForState.draft)
+    ? (selectedInboxEmail ? selectedInboxEmail.replyDraft ?? null : inboxPayloadForState.draft)
     : null
 
   useEffect(() => {
@@ -515,8 +609,10 @@ export default function ReviewPage() {
     )
     const visibleEmails = filteredEmails.slice(0, 20)
     const selectedEmail = selectedInboxEmail
-    const activeDraft = selectedEmail?.replyDraft ?? inboxPayload.draft
-    const intentSuggestions = (activeDraft.intentSuggestions && activeDraft.intentSuggestions.length > 0)
+    const activeDraft = selectedEmail?.replyDraft ?? null
+    const replyIsLoading = selectedEmail?.replyState === 'loading'
+    const replyIsReady = selectedEmail?.replyState === 'ready' || !!selectedEmail?.replyDraft
+    const intentSuggestions = activeDraft && activeDraft.intentSuggestions && activeDraft.intentSuggestions.length > 0
       ? activeDraft.intentSuggestions
       : fallbackIntentSuggestions(selectedEmail)
     const effectiveRightView = rightView === 'empty' && visibleEmails.length === 0 ? 'draft' : rightView
@@ -670,6 +766,8 @@ export default function ReviewPage() {
             <>
               {visibleEmails.map(email => {
                 const isSelected = selectedEmailId === email.id
+                const replyLoading = email.replyState === 'loading'
+                const replyReady = email.replyState === 'ready' || !!email.replyDraft
                 return (
                   <div
                     key={email.id}
@@ -686,17 +784,36 @@ export default function ReviewPage() {
                         {normalizeCategory(email.category)}
                       </span>
                       <span className="text-sm font-medium text-zinc-800 dark:text-slate-200 truncate flex-1 min-w-0">{email.from}</span>
+                      {replyReady && (
+                        <span
+                          className="inline-flex h-3 w-3 shrink-0 rounded-full border-2 border-blue-500"
+                          title="Reply draft ready"
+                        />
+                      )}
+                      {email.replyUnread && (
+                        <span
+                          className="inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-red-500"
+                          title="Unread reply draft update"
+                        />
+                      )}
+                      {replyLoading && (
+                        <span
+                          className="inline-flex h-3 w-3 shrink-0 rounded-full border-2 border-amber-500 border-t-transparent animate-spin"
+                          title="Reply draft loading"
+                        />
+                      )}
                     </div>
                     <p className="text-xs text-zinc-500 dark:text-slate-400 truncate mb-0.5">{email.subject}</p>
                     <p className="text-xs text-zinc-400 dark:text-slate-500 line-clamp-2 mb-2">{email.preview}</p>
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <button
                         onClick={e => { e.stopPropagation(); handleReply(email) }}
+                        disabled={waitingForRewrite && pendingAgentAction === 'reply' && activeReplyRequestEmailId !== email.id}
                         className="text-xs font-semibold px-3 py-1.5 rounded-full transition-all hover:shadow-md active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-1"
                         style={{ backgroundColor: 'var(--c-navy)', color: 'var(--c-bg)', boxShadow: '0 1px 3px rgba(29,53,87,0.25)' }}
                         aria-label="Reply to email"
                       >
-                        Reply
+                        {replyLoading ? 'Loading...' : 'Reply'}
                       </button>
                       <button
                         onClick={e => { e.stopPropagation(); handleMarkAsRead(email.id) }}
@@ -834,6 +951,7 @@ export default function ReviewPage() {
                       {/* Reply — primary */}
                       <button
                         onClick={() => handleReply(email)}
+                        disabled={waitingForRewrite && pendingAgentAction === 'reply' && activeReplyRequestEmailId !== email.id}
                         className="text-sm font-semibold px-5 py-2 rounded-lg transition-all hover:shadow-md active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-1"
                         style={{ backgroundColor: 'var(--c-navy)', color: 'var(--c-bg)', boxShadow: '0 1px 4px rgba(29,53,87,0.25)' }}
                         aria-label="Reply to email"
@@ -885,107 +1003,132 @@ export default function ReviewPage() {
                 {/* Header */}
                 <div className="mb-6">
                   <p className="text-xs text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-1">Email Draft Review</p>
-                  <h1 className="text-xl font-semibold text-gray-800 dark:text-slate-100">{draftSubject || activeDraft.subject}</h1>
-                  <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">To: {draftTo || activeDraft.to}</p>
+                  <h1 className="text-xl font-semibold text-gray-800 dark:text-slate-100">{draftSubject || activeDraft?.subject || `Re: ${selectedEmail?.subject ?? ''}`}</h1>
+                  <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">To: {draftTo || activeDraft?.to || selectedEmail?.from || '—'}</p>
                 </div>
 
-                <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg space-y-3">
-                  <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider">Reply Draft</p>
-                  <div>
-                    <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Reply To</label>
-                    <div className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-zinc-50 dark:bg-zinc-950 text-zinc-500 dark:text-slate-400">
-                      {activeDraft.replyTo}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">To</label>
-                    <div className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-zinc-50 dark:bg-zinc-950 text-zinc-500 dark:text-slate-400">
-                      {draftTo}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Subject</label>
-                    <input
-                      type="text"
-                      value={draftSubject}
-                      onChange={e => setDraftSubject(e.target.value)}
-                      className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Add Recipient</label>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setNewRecipientType(type => type === 'cc' ? 'bcc' : 'cc')}
-                        className="px-3 py-2 text-sm rounded border border-gray-200 dark:border-zinc-700 text-zinc-600 dark:text-slate-300"
-                        title="Toggle recipient type"
-                      >
-                        {newRecipientType.toUpperCase()} +
-                      </button>
-                      <input
-                        type="text"
-                        value={newRecipientValue}
-                        onChange={e => setNewRecipientValue(e.target.value)}
-                        placeholder={newRecipientType === 'cc' ? 'Add Cc address' : 'Add Bcc address'}
-                        className="flex-1 text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (newRecipientType === 'cc') setDraftCc(current => addUniqueAddress(current, newRecipientValue))
-                          else setDraftBcc(current => addUniqueAddress(current, newRecipientValue))
-                          setNewRecipientValue('')
-                        }}
-                        className="px-3 py-2 text-sm rounded border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-300"
-                        title="Add recipient"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-                  {draftCc.length > 0 && (
+                {replyIsLoading && !activeDraft && (
+                  <div className="mb-6 p-5 bg-blue-50 dark:bg-blue-950 border border-blue-100 dark:border-blue-900 rounded-lg flex items-center gap-3">
+                    <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0" />
                     <div>
-                      <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Cc</label>
-                      <div className="flex flex-wrap gap-2">
-                        {draftCc.map(email => (
-                          <button
-                            key={`cc-${email}`}
-                            type="button"
-                            onClick={() => setDraftCc(current => current.filter(value => value !== email))}
-                            className="text-xs px-2 py-1 rounded-full border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950 text-sky-700 dark:text-sky-300"
-                          >
-                            {email} ×
-                          </button>
-                        ))}
-                      </div>
+                      <p className="text-sm font-medium text-blue-700 dark:text-blue-300">Generating reply draft</p>
+                      <p className="text-xs text-blue-600 dark:text-blue-400">You can keep checking other emails while the agent prepares this draft.</p>
                     </div>
-                  )}
-                  {draftBcc.length > 0 && (
-                    <div>
-                      <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Bcc</label>
-                      <div className="flex flex-wrap gap-2">
-                        {draftBcc.map(email => (
-                          <button
-                            key={`bcc-${email}`}
-                            type="button"
-                            onClick={() => setDraftBcc(current => current.filter(value => value !== email))}
-                            className="text-xs px-2 py-1 rounded-full border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950 text-violet-700 dark:text-violet-300"
-                          >
-                            {email} ×
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                )}
 
-                <div className="space-y-5 mb-8">
-                  {renderParagraphs(activeDraft.paragraphs)}
-                </div>
+                {!replyIsLoading && !activeDraft && (
+                  <div className="mb-6 p-5 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg">
+                    <p className="text-sm text-zinc-700 dark:text-slate-300">Reply draft will appear here after you click `Reply` for an email.</p>
+                  </div>
+                )}
+
+                {activeDraft && (
+                  <>
+                    <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-zinc-400 dark:text-slate-500 uppercase tracking-wider">Reply Draft</p>
+                        {replyIsReady && (
+                          <span className="text-xs font-medium text-blue-600 dark:text-blue-300">Draft ready</span>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Reply To</label>
+                        <div className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-zinc-50 dark:bg-zinc-950 text-zinc-500 dark:text-slate-400">
+                          {activeDraft.replyTo}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">To</label>
+                        <div className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-zinc-50 dark:bg-zinc-950 text-zinc-500 dark:text-slate-400">
+                          {draftTo}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Subject</label>
+                        <input
+                          type="text"
+                          value={draftSubject}
+                          onChange={e => setDraftSubject(e.target.value)}
+                          className="w-full text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Add Recipient</label>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setNewRecipientType(type => type === 'cc' ? 'bcc' : 'cc')}
+                            className="px-3 py-2 text-sm rounded border border-gray-200 dark:border-zinc-700 text-zinc-600 dark:text-slate-300"
+                            title="Toggle recipient type"
+                          >
+                            {newRecipientType.toUpperCase()} +
+                          </button>
+                          <input
+                            type="text"
+                            value={newRecipientValue}
+                            onChange={e => setNewRecipientValue(e.target.value)}
+                            placeholder={newRecipientType === 'cc' ? 'Add Cc address' : 'Add Bcc address'}
+                            className="flex-1 text-sm border border-gray-200 dark:border-zinc-700 rounded px-3 py-2 bg-white dark:bg-zinc-950 text-zinc-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (newRecipientType === 'cc') setDraftCc(current => addUniqueAddress(current, newRecipientValue))
+                              else setDraftBcc(current => addUniqueAddress(current, newRecipientValue))
+                              setNewRecipientValue('')
+                            }}
+                            className="px-3 py-2 text-sm rounded border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-300"
+                            title="Add recipient"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                      {draftCc.length > 0 && (
+                        <div>
+                          <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Cc</label>
+                          <div className="flex flex-wrap gap-2">
+                            {draftCc.map(email => (
+                              <button
+                                key={`cc-${email}`}
+                                type="button"
+                                onClick={() => setDraftCc(current => current.filter(value => value !== email))}
+                                className="text-xs px-2 py-1 rounded-full border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950 text-sky-700 dark:text-sky-300"
+                              >
+                                {email} ×
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {draftBcc.length > 0 && (
+                        <div>
+                          <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-1">Bcc</label>
+                          <div className="flex flex-wrap gap-2">
+                            {draftBcc.map(email => (
+                              <button
+                                key={`bcc-${email}`}
+                                type="button"
+                                onClick={() => setDraftBcc(current => current.filter(value => value !== email))}
+                                className="text-xs px-2 py-1 rounded-full border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950 text-violet-700 dark:text-violet-300"
+                              >
+                                {email} ×
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-5 mb-8">
+                      {renderParagraphs(activeDraft.paragraphs)}
+                    </div>
+                  </>
+                )}
 
                 {/* Waiting for rewrite indicator */}
-                {waitingForRewrite && (
+                {waitingForRewrite && pendingAgentAction !== 'reply' && (
                   <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-950 border border-blue-100 dark:border-blue-900 rounded-lg flex items-center gap-3">
                     <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0" />
                     <p className="text-sm text-blue-600 dark:text-blue-400">
@@ -1009,7 +1152,7 @@ export default function ReviewPage() {
                     </div>
 
                     {/* Intent Suggestions */}
-                    {intentSuggestions.length > 0 && (
+                    {activeDraft && intentSuggestions.length > 0 && (
                       <div className="mb-6">
                         <label className="block text-xs text-zinc-500 dark:text-slate-400 mb-2">Reply Suggestions</label>
                         <div className="flex flex-wrap gap-2">
@@ -1037,16 +1180,16 @@ export default function ReviewPage() {
                     <div className="flex gap-3">
                       <button
                         onClick={() => submit(true)}
-                        disabled={submitting || waitingForRewrite}
-                        className={`flex-1 text-sm font-semibold py-2.5 rounded-lg transition-opacity ${submitting || waitingForRewrite ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90'}`}
+                        disabled={submitting || waitingForRewrite || !activeDraft}
+                        className={`flex-1 text-sm font-semibold py-2.5 rounded-lg transition-opacity ${submitting || waitingForRewrite || !activeDraft ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90'}`}
                         style={{ backgroundColor: 'var(--c-teal)', color: 'var(--c-bg)' }}
                       >
                         Confirm & Send
                       </button>
                       <button
                         onClick={() => submit(false)}
-                        disabled={submitting || waitingForRewrite}
-                        className={`px-4 text-sm text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-zinc-700 rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors ${submitting || waitingForRewrite ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        disabled={submitting || waitingForRewrite || !activeDraft}
+                        className={`px-4 text-sm text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-zinc-700 rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors ${submitting || waitingForRewrite || !activeDraft ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         Regenerate
                       </button>

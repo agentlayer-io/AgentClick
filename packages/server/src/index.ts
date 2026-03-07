@@ -711,6 +711,11 @@ function buildActionSummary(result: Record<string, unknown>): string {
       : []
     lines.push(`- User requested more emails${requestedCategories.length > 0 ? ` for categories: ${requestedCategories.join(', ')}` : ''}.`)
   }
+  if (result.requestReplyDraft) {
+    const emailSubject = typeof result.emailSubject === 'string' ? result.emailSubject : ''
+    const emailId = typeof result.emailId === 'string' ? result.emailId : ''
+    lines.push(`- User requested a reply draft${emailSubject ? ` for "${emailSubject}"` : emailId ? ` for ${emailId}` : ''}.`)
+  }
 
   const intents = (result.selectedIntents ?? []) as Array<{ id: string; accepted: boolean }>
   if (intents.length > 0) {
