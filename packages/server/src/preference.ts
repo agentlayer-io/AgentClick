@@ -5,6 +5,8 @@ import os from 'os'
 const MEMORY_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'MEMORY.md')
 const SECTION_HEADER = '## Email Preferences (ClickUI Auto-Learned)'
 const TRAJECTORY_SECTION_HEADER = '## Trajectory Guidance (ClickUI Auto-Learned)'
+const CODE_SECTION_HEADER = '## Code Review Preferences (ClickUI Auto-Learned)'
+const ACTION_SECTION_HEADER = '## Action Approval Preferences (ClickUI Auto-Learned)'
 
 interface Paragraph {
   id: string
@@ -158,11 +160,53 @@ export function learnFromTrajectoryRevisions(
   console.log(`[agentclick] Learned ${rules.length} trajectory rule(s) -> ${MEMORY_PATH}`)
 }
 
+export function learnFromCodeRejection(
+  result: { approved: boolean; note?: string },
+  payload: Record<string, unknown>
+): void {
+  if (result.approved) return
+  const command = typeof payload.command === 'string' ? payload.command : ''
+  if (!command) return
+
+  const risk = typeof payload.risk === 'string' ? payload.risk : 'unknown'
+  const notePart = result.note ? ` | note:${result.note}` : ''
+  const rule = `- AVOID: ${summarize(command)} | reason:user_rejected | scope:code | risk:${risk}${notePart}`
+
+  ensureMemoryFile()
+  const existing = fs.readFileSync(MEMORY_PATH, 'utf-8')
+  const needsHeader = !existing.includes(CODE_SECTION_HEADER)
+  const block = needsHeader ? `\n${CODE_SECTION_HEADER}\n${rule}\n` : `${rule}\n`
+  fs.appendFileSync(MEMORY_PATH, block, 'utf-8')
+  console.log(`[agentclick] Learned code rejection rule -> ${MEMORY_PATH}`)
+}
+
+export function learnFromActionRejection(
+  result: { approved: boolean; note?: string },
+  payload: Record<string, unknown>
+): void {
+  if (result.approved) return
+  const title = typeof payload.title === 'string' ? payload.title : ''
+  const description = typeof payload.description === 'string' ? payload.description : ''
+  const subject = title || description
+  if (!subject) return
+
+  const risk = typeof payload.risk === 'string' ? payload.risk : 'unknown'
+  const notePart = result.note ? ` | note:${result.note}` : ''
+  const rule = `- AVOID: ${summarize(subject)} | reason:user_rejected | scope:action | risk:${risk}${notePart}`
+
+  ensureMemoryFile()
+  const existing = fs.readFileSync(MEMORY_PATH, 'utf-8')
+  const needsHeader = !existing.includes(ACTION_SECTION_HEADER)
+  const block = needsHeader ? `\n${ACTION_SECTION_HEADER}\n${rule}\n` : `${rule}\n`
+  fs.appendFileSync(MEMORY_PATH, block, 'utf-8')
+  console.log(`[agentclick] Learned action rejection rule -> ${MEMORY_PATH}`)
+}
+
 export interface LearnedPreference {
   description: string
   reason: string
   scope: string
-  type?: 'email' | 'trajectory'
+  type?: 'email' | 'trajectory' | 'code' | 'action'
 }
 
 export function getLearnedPreferences(): LearnedPreference[] {
@@ -219,6 +263,44 @@ export function getLearnedPreferences(): LearnedPreference[] {
     }
   }
 
+  // Parse code review rejection section
+  const codeStart = content.indexOf(CODE_SECTION_HEADER)
+  if (codeStart !== -1) {
+    const codeContent = content.slice(codeStart + CODE_SECTION_HEADER.length)
+    const nextHeader = codeContent.indexOf('\n## ')
+    const section = nextHeader !== -1 ? codeContent.slice(0, nextHeader) : codeContent
+    for (const line of section.split('\n')) {
+      const match = line.match(/^- AVOID: (.+?) \| reason:(.+?) \| scope:code \| risk:(.+?)( \| note:(.+))?$/)
+      if (match) {
+        preferences.push({
+          description: match[1].trim(),
+          reason: match[5] ? match[5].trim() : 'user rejected',
+          scope: `code (risk: ${match[3].trim()})`,
+          type: 'code',
+        })
+      }
+    }
+  }
+
+  // Parse action approval rejection section
+  const actionStart = content.indexOf(ACTION_SECTION_HEADER)
+  if (actionStart !== -1) {
+    const actionContent = content.slice(actionStart + ACTION_SECTION_HEADER.length)
+    const nextHeader = actionContent.indexOf('\n## ')
+    const section = nextHeader !== -1 ? actionContent.slice(0, nextHeader) : actionContent
+    for (const line of section.split('\n')) {
+      const match = line.match(/^- AVOID: (.+?) \| reason:(.+?) \| scope:action \| risk:(.+?)( \| note:(.+))?$/)
+      if (match) {
+        preferences.push({
+          description: match[1].trim(),
+          reason: match[5] ? match[5].trim() : 'user rejected',
+          scope: `action (risk: ${match[3].trim()})`,
+          type: 'action',
+        })
+      }
+    }
+  }
+
   return preferences
 }
 
@@ -228,9 +310,9 @@ export function deletePreference(index: number): void {
   const content = fs.readFileSync(MEMORY_PATH, 'utf-8')
   const lines = content.split('\n')
 
-  // Collect all preference line indices across both sections (same order as getLearnedPreferences)
+  // Collect all preference line indices across all sections (same order as getLearnedPreferences)
   const prefLineIndices: number[] = []
-  for (const header of [SECTION_HEADER, TRAJECTORY_SECTION_HEADER]) {
+  for (const header of [SECTION_HEADER, TRAJECTORY_SECTION_HEADER, CODE_SECTION_HEADER, ACTION_SECTION_HEADER]) {
     const headerIdx = lines.findIndex(l => l === header)
     if (headerIdx === -1) continue
     let endIdx = lines.length
@@ -254,7 +336,7 @@ export function clearPreferences(): void {
   let content = fs.readFileSync(MEMORY_PATH, 'utf-8')
 
   // Remove each section by header
-  for (const header of [SECTION_HEADER, TRAJECTORY_SECTION_HEADER]) {
+  for (const header of [SECTION_HEADER, TRAJECTORY_SECTION_HEADER, CODE_SECTION_HEADER, ACTION_SECTION_HEADER]) {
     const lines = content.split('\n')
     const headerIdx = lines.findIndex(l => l === header)
     if (headerIdx === -1) continue
