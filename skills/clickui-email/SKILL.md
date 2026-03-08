@@ -252,7 +252,8 @@ If the user edits draft paragraphs in the page:
 
 Always write the updated payload to a temp file before PUT.
 
-When updating after a reply request, place the draft on the email item (not in `payload.draft`):
+When updating after a reply request, place the draft on the email item (not in `payload.draft`).
+Only include the target email in the inbox array — the server merges it with existing emails by id, so other emails are preserved:
 
 ```bash
 cat > /tmp/clickui_email_payload.json <<'JSON'
@@ -273,16 +274,7 @@ cat > /tmp/clickui_email_payload.json <<'JSON'
           ]
         }
       }
-    ],
-    "draft": {
-      "replyTo": "sender@example.com",
-      "to": "sender@example.com",
-      "subject": "Re: Original subject",
-      "paragraphs": [
-        {"id": "p1", "content": "Paragraph 1"},
-        {"id": "p2", "content": "Paragraph 2"}
-      ]
-    }
+    ]
   }
 }
 JSON
