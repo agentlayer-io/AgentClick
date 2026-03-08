@@ -591,6 +591,7 @@ app.post('/api/sessions/:id/page-status', (req, res) => {
 })
 
 app.post('/api/sessions/:id/email-send', async (req, res) => {
+  try {
   const session = getSession(req.params.id)
   if (!session) return res.status(404).json({ error: 'Session not found' })
 
@@ -644,6 +645,13 @@ app.post('/api/sessions/:id/email-send', async (req, res) => {
   }
 
   res.json({ ok: true, callbackFailed, callbackError, remaining: nextInbox.length })
+  } catch (err) {
+    const msg = err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT'
+      ? 'gog not installed — Gmail send requires gog CLI'
+      : String(err)
+    console.error('[agentclick] email-send failed:', msg)
+    res.status(500).json({ error: msg })
+  }
 })
 
 app.get('/api/sessions/:id/summary', (req, res) => {
