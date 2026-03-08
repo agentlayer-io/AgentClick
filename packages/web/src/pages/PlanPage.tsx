@@ -443,7 +443,7 @@ function PlanDagNode({
       }`}
       role="button"
       tabIndex={0}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
+      onKeyDown={e => { const t = e.target as HTMLElement; if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       aria-label={`Step ${node.stepId}: ${step.label}`}
     >
       <div

@@ -216,13 +216,23 @@ The human's response is returned via `/api/sessions/:id` (poll) or `/api/session
 
 1. Human reviews plan and clicks "Regenerate"
 2. Agent's poll (or `/wait` in non-Docker) resolves with `status: "rewriting"` and the human's feedback
-3. Agent revises the plan based on modifications, constraints, and notes
+3. Agent revises the plan based on the human's feedback:
+   - Read `result.constraints` for per-step comments — these tell you what the user wants changed about specific steps
+   - Read `result.globalNote` for overall feedback
+   - Adjust the plan to address all user comments before PUTting the updated payload
 4. Agent PUTs updated payload: `PUT /api/sessions/:id/payload`
 5. Human reviews again (status resets to `pending`)
 
 ## Act on Decision
 
-- **approved**: Execute the plan as modified immediately (apply modifications, respect removals/skipped, honor constraints). Do not ask for confirmation again in chat.
+- **approved**: Execute the plan incorporating all user feedback:
+  1. Apply `modifications` — use modified labels/descriptions instead of originals
+  2. Apply `insertions` — add inserted steps at the specified positions
+  3. Skip `removals` and `skipped` steps
+  4. **Read `constraints`** — these are per-step user comments. For each step ID in `constraints`, read the user's comments and adjust that step's execution accordingly. User comments take priority over the original step description.
+  5. **Read `globalConstraints`** — apply these rules across all steps
+  6. **Read `globalNote`** — treat as an overarching instruction from the user
+  Do not ask for confirmation again in chat.
 - **rejected**: Stop execution, do not proceed
 - **regenerate**: Revise the plan incorporating human feedback, then PUT updated payload for re-review
 
