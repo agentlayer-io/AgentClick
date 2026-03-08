@@ -154,24 +154,27 @@ Payload rules:
 
 After creating the session, the same agent must stay attached to it.
 
-**Do NOT use `/wait` and do NOT use a bash `while` loop.** Both block the process
-for minutes and will cause listener timeouts in this environment.
-
-Instead, poll by running **one curl per exec call**, then process the result in your
-context before issuing the next poll:
+Preferred loop:
 
 ```bash
-curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}"
+curl -s --max-time 310 "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/wait"
 ```
 
-After each poll:
-- Inspect `status`, `result`, and `pageStatus`
-- If `pageStatus.stopMonitoring` is `true` → stop
-- If `status` is `"completed"` → stop
-- If `status` is `"rewriting"` → handle the request (see Rewrite / Update Rules below), then poll again
-- Otherwise → wait 1 second (`sleep 1` as a separate exec), then poll again
+Fallback if blocking is unavailable:
 
-Each exec must be short (under 5 seconds). You are the loop controller — run poll iterations one at a time in your own turn cycle.
+```bash
+while true; do
+  curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}"
+  sleep 10
+done
+```
+
+When using the fallback, inspect:
+- `status`
+- `result`
+- `pageStatus`
+
+If `pageStatus.stopMonitoring` is `true`, stop immediately.
 
 ## Rewrite / Update Rules
 
