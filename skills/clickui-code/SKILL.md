@@ -101,8 +101,12 @@ else
 fi
 ```
 
-- In Docker (`GOG_ACCOUNT` set): run ONE curl per exec call, check result in your context, then poll again. Do NOT use a bash while loop. You are the loop controller.
-- In non-Docker: the `/wait` call blocks until the user approves or rejects, then process the result.
+After each poll:
+- If `status` is `"completed"` → proceed to Step 4.
+- If `status` is still `"pending"` → wait 1 second (`sleep 1` as a separate exec in Docker), then poll again.
+
+In Docker (`GOG_ACCOUNT` set): run ONE curl per exec call. Do NOT use a bash while loop. You are the loop controller.
+In non-Docker: the `/wait` call blocks until the user approves or rejects, then process the result.
 
 ## Step 4: Act on the decision
 
