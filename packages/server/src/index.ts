@@ -248,7 +248,7 @@ app.get('/api/home-info', (_req, res) => {
     { type: 'action_approval', route: '/approval/:id' },
     { type: 'code_review', route: '/code-review/:id' },
     { type: 'email_review', route: '/review/:id' },
-    { type: 'memory_management', route: '/memory-management' },
+    { type: 'memory_management', route: '/memory-management/:id' },
     { type: 'plan_review', route: '/plan/:id' },
     { type: 'memory_review', route: '/memory/:id' },
     { type: 'trajectory_review', route: '/trajectory/:id' },
@@ -479,6 +479,42 @@ app.post('/api/memory/review/create', async (req, res) => {
       if (openHome) await open(`${WEB_ORIGIN}/`)
     } catch (err) {
       console.warn('[agentclick] Failed to open memory review browser tab:', err)
+    }
+  }
+  res.json({ sessionId: id, url })
+})
+
+app.post('/api/memory/management/create', async (req, res) => {
+  const { sessionKey, noOpen, openHome, currentContextFiles, extraMarkdownDirs, searchQuery } = req.body ?? {}
+  const projectRoot = join(__dirname, '../../..')
+  const catalog = buildMemoryCatalog({
+    projectRoot,
+    currentContextFiles: Array.isArray(currentContextFiles) ? currentContextFiles : undefined,
+    extraMarkdownDirs: Array.isArray(extraMarkdownDirs) ? extraMarkdownDirs : undefined,
+    searchQuery: typeof searchQuery === 'string' ? searchQuery : undefined,
+  })
+
+  const now = Date.now()
+  const id = createSessionId()
+  createSession({
+    id,
+    type: 'memory_management',
+    payload: catalog,
+    sessionKey,
+    status: 'pending',
+    pageStatus: { state: 'created', updatedAt: now },
+    createdAt: now,
+    updatedAt: now,
+    revision: 0,
+  })
+
+  const url = `${WEB_ORIGIN}/memory-management/${id}`
+  if (!noOpen) {
+    try {
+      await open(url)
+      if (openHome) await open(`${WEB_ORIGIN}/`)
+    } catch (err) {
+      console.warn('[agentclick] Failed to open memory management browser tab:', err)
     }
   }
   res.json({ sessionId: id, url })

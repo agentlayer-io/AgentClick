@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useParams } from 'react-router-dom'
+import { buildMemoryTree, MemoryMindMapFileTree } from '../components/MemoryMindMapTree'
 
 interface MemoryFile {
   id: string
@@ -28,6 +30,8 @@ interface FileContentResponse {
   relativePath: string
   content: string
 }
+
+type PageStatusState = 'opened' | 'active' | 'hidden'
 
 function renderMarkdownFriendly(markdown: string) {
   const lines = markdown.split('\n')
@@ -96,41 +100,110 @@ function renderMarkdownFriendly(markdown: string) {
 }
 
 export default function MemoryManagementPage() {
+  const { id: sessionId } = useParams<{ id: string }>()
+  const isSessionMode = !!sessionId
+
   const [catalog, setCatalog] = useState<CatalogResponse | null>(null)
   const [selectedPath, setSelectedPath] = useState<string>('')
   const [selectedContent, setSelectedContent] = useState<FileContentResponse | null>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
-  const [collapsedMindGroups, setCollapsedMindGroups] = useState<Set<string>>(new Set())
+  const [collapsedTreeIds, setCollapsedTreeIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [fileLoading, setFileLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState('')
   const [agentDeleteRequest, setAgentDeleteRequest] = useState('')
+  const [waitingForRewrite, setWaitingForRewrite] = useState(false)
+  const pollRef = useRef<number | null>(null)
 
-  const loadCatalog = async () => {
+  const loadCatalog = useCallback(async () => {
     setLoading(true)
     try {
-      const response = await fetch('/api/memory/files')
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      const data = await response.json() as CatalogResponse
-      setCatalog(data)
+      if (isSessionMode) {
+        const response = await fetch(`/api/sessions/${sessionId}`)
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const data = await response.json()
+        setCatalog(data.payload as CatalogResponse)
+      } else {
+        const response = await fetch('/api/memory/files')
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const data = await response.json() as CatalogResponse
+        setCatalog(data)
+      }
       setError('')
     } catch {
       setError('Failed to load memory catalog')
     } finally {
       setLoading(false)
     }
-  }
+  }, [isSessionMode, sessionId])
 
   useEffect(() => {
     loadCatalog()
-  }, [])
+  }, [loadCatalog])
+
+  // Session mode: page status heartbeat
+  useEffect(() => {
+    if (!isSessionMode) return
+    const postPageStatus = async (state: PageStatusState) => {
+      try {
+        await fetch(`/api/sessions/${sessionId}/page-status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ state }),
+        })
+      } catch {
+        // Presence tracking is observational only.
+      }
+    }
+    void postPageStatus('opened')
+    const activeTimer = window.setInterval(() => {
+      void postPageStatus(document.visibilityState === 'visible' ? 'active' : 'hidden')
+    }, 10000)
+    const onVisibility = () => { void postPageStatus(document.visibilityState === 'visible' ? 'active' : 'hidden') }
+    const onBeforeUnload = () => { void postPageStatus('hidden') }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => {
+      window.clearInterval(activeTimer)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('beforeunload', onBeforeUnload)
+    }
+  }, [isSessionMode, sessionId])
+
+  // Session mode: poll for payload updates after completing an action
+  useEffect(() => {
+    if (!waitingForRewrite || !isSessionMode) return
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/sessions/${sessionId}`)
+        if (!response.ok) return
+        const data = await response.json()
+        if (data.status === 'pending') {
+          setCatalog(data.payload as CatalogResponse)
+          setWaitingForRewrite(false)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    pollRef.current = window.setInterval(poll, 1500)
+    return () => {
+      if (pollRef.current != null) window.clearInterval(pollRef.current)
+    }
+  }, [waitingForRewrite, isSessionMode, sessionId])
 
   const fileMap = useMemo(() => {
     const m = new Map<string, MemoryFile>()
     for (const file of catalog?.files ?? []) m.set(file.id, file)
     return m
   }, [catalog])
+
+  const selectedFileId = useMemo(() => {
+    if (!selectedPath) return null
+    const file = catalog?.files.find(f => f.path === selectedPath)
+    return file?.id ?? null
+  }, [catalog, selectedPath])
 
   const openFile = async (file: MemoryFile) => {
     setSelectedPath(file.path)
@@ -149,6 +222,11 @@ export default function MemoryManagementPage() {
     }
   }
 
+  const openFileByPath = (relPath: string) => {
+    const file = catalog?.files.find(f => f.relativePath === relPath)
+    if (file) openFile(file)
+  }
+
   const toggleGroup = (id: string) => {
     setCollapsedGroups(prev => {
       const next = new Set(prev)
@@ -158,8 +236,8 @@ export default function MemoryManagementPage() {
     })
   }
 
-  const toggleMindGroup = (id: string) => {
-    setCollapsedMindGroups(prev => {
+  const toggleTreeCollapse = (id: string) => {
+    setCollapsedTreeIds(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -172,6 +250,7 @@ export default function MemoryManagementPage() {
     return catalog?.files.find(file => file.path === selectedPath) ?? null
   }, [catalog, selectedPath])
 
+  // Build mind map groups with tree nodes
   const mindGroups = useMemo(() => {
     const files = catalog?.files ?? []
     return [
@@ -179,28 +258,56 @@ export default function MemoryManagementPage() {
         id: 'mind_in_content',
         label: 'In This Content',
         files: files.filter(file => file.inCurrentContent),
-        color: 'border-emerald-300 bg-emerald-50 text-emerald-800',
       },
       {
         id: 'mind_in_project',
         label: 'In Project (Not Loaded)',
         files: files.filter(file => !file.inCurrentContent && file.inProject),
-        color: 'border-blue-300 bg-blue-50 text-blue-800',
       },
       {
         id: 'mind_in_cache',
-        label: 'In Agent Cache (Not Loaded)',
+        label: 'In Agent Cache',
         files: files.filter(file => !file.inCurrentContent && file.inAgentCache),
-        color: 'border-amber-300 bg-amber-50 text-amber-800',
       },
       {
         id: 'mind_related',
         label: 'Related Markdown',
         files: files.filter(file => !file.inCurrentContent && !file.inProject && !file.inAgentCache && file.relatedMarkdown),
-        color: 'border-zinc-300 bg-zinc-100 text-zinc-700',
       },
     ].filter(group => group.files.length > 0)
   }, [catalog])
+
+  // Agent Cache collapsed by default
+  const [mindGroupCollapseInit, setMindGroupCollapseInit] = useState(false)
+  const [collapsedMindGroups, setCollapsedMindGroups] = useState<Set<string>>(new Set(['mind_in_cache']))
+  useEffect(() => {
+    if (mindGroupCollapseInit || mindGroups.length === 0) return
+    setCollapsedMindGroups(new Set(['mind_in_cache']))
+    setMindGroupCollapseInit(true)
+  }, [mindGroups, mindGroupCollapseInit])
+
+  const toggleMindGroup = (id: string) => {
+    setCollapsedMindGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const completeSessionAction = async (action: 'include' | 'exclude' | 'delete', targetPath: string) => {
+    if (!isSessionMode) return
+    try {
+      await fetch(`/api/sessions/${sessionId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ regenerate: true, action, path: targetPath }),
+      })
+      setWaitingForRewrite(true)
+    } catch {
+      // ignore session notification failure
+    }
+  }
 
   const setInContext = async (targetPath: string, include: boolean) => {
     setActionLoading(true)
@@ -211,6 +318,9 @@ export default function MemoryManagementPage() {
         body: JSON.stringify({ path: targetPath }),
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      if (isSessionMode) {
+        await completeSessionAction(include ? 'include' : 'exclude', targetPath)
+      }
       await loadCatalog()
       setError('')
     } catch {
@@ -220,26 +330,18 @@ export default function MemoryManagementPage() {
     }
   }
 
-  const handleDeleteRequest = (targetPath: string) => {
+  const handleDelete = async (targetPath: string) => {
     const confirmed = window.confirm('Delete this memory file permanently?')
     if (!confirmed) return
-    const requestText = [
-      'Please delete this memory file from disk:',
-      targetPath,
-      '',
-      'Reason: user requested file deletion from Memory Management UI.',
-    ].join('\n')
-    setAgentDeleteRequest(requestText)
-    setError('')
-  }
-
-  const copyDeleteRequest = async () => {
-    if (!agentDeleteRequest) return
-    try {
-      await navigator.clipboard.writeText(agentDeleteRequest)
-    } catch {
-      setError('Failed to copy agent delete request')
+    setActionLoading(true)
+    if (isSessionMode) {
+      await completeSessionAction('delete', targetPath)
+      setAgentDeleteRequest(`Deleting ${targetPath}... agent will handle this.`)
+    } else {
+      setAgentDeleteRequest('Delete requires a session-based management page. Use POST /api/memory/management/create to start a session.')
     }
+    setError('')
+    setActionLoading(false)
   }
 
   return (
@@ -250,6 +352,9 @@ export default function MemoryManagementPage() {
         <p className="text-sm text-zinc-500 dark:text-slate-400 mt-1">
           Browse memory-related files and open full content in a readable markdown view.
         </p>
+        {isSessionMode && waitingForRewrite && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">Agent is processing your action...</p>
+        )}
 
         {loading && <p className="text-sm text-zinc-400 dark:text-slate-500 mt-4">Loading memory catalog...</p>}
         {error && <p className="text-sm text-red-500 mt-4">{error}</p>}
@@ -258,49 +363,33 @@ export default function MemoryManagementPage() {
           <>
             <div className="mt-5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-4 overflow-x-auto">
               <p className="text-sm font-medium text-zinc-800 dark:text-slate-200">Memory Level Mind Map</p>
-              <p className="text-xs text-zinc-500 dark:text-slate-400 mt-1">Click any file node to open the full file. Click a level node to fold or unfold.</p>
-              <div className="mt-4 min-w-[920px]">
-                <div className="flex items-start gap-4">
-                  <div className="shrink-0 px-3 py-2 rounded-full border border-violet-300 bg-violet-50 text-violet-800 text-xs font-semibold">
-                    Memory
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    {mindGroups.map(group => {
-                      const collapsed = collapsedMindGroups.has(group.id)
-                      return (
-                        <div key={group.id} className="flex items-start gap-2">
-                          <button
-                            onClick={() => toggleMindGroup(group.id)}
-                            className={`shrink-0 px-3 py-1.5 rounded-full border text-xs font-medium ${group.color}`}
-                          >
-                            {collapsed ? '▸' : '▾'} {group.label} ({group.files.length})
-                          </button>
-                          {!collapsed && (
-                            <div className="flex flex-wrap gap-1.5">
-                              {group.files.map(file => {
-                                const active = selectedPath === file.path
-                                return (
-                                  <button
-                                    key={file.id}
-                                    onClick={() => openFile(file)}
-                                    className={`px-2 py-1 rounded-full border text-[11px] font-mono max-w-[380px] truncate ${
-                                      active
-                                        ? 'border-blue-400 bg-blue-50 dark:bg-blue-950 text-blue-800 dark:text-blue-200'
-                                        : 'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-zinc-700'
-                                    }`}
-                                    title={file.path}
-                                  >
-                                    {file.relativePath}
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          )}
+              <p className="text-xs text-zinc-500 dark:text-slate-400 mt-1">Click any file node to open the full file. Click a directory node to fold or unfold.</p>
+              <div className="mt-4 space-y-4">
+                {mindGroups.map(group => {
+                  const collapsed = collapsedMindGroups.has(group.id)
+                  const treeNodes = buildMemoryTree(group.files, new Set())
+                  return (
+                    <div key={group.id}>
+                      <button
+                        onClick={() => toggleMindGroup(group.id)}
+                        className="px-3 py-1.5 rounded-full border text-xs font-medium border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-slate-300 mb-2"
+                      >
+                        {collapsed ? '▸' : '▾'} {group.label} ({group.files.length})
+                      </button>
+                      {!collapsed && (
+                        <div className="ml-2">
+                          <MemoryMindMapFileTree
+                            nodes={treeNodes}
+                            collapsedIds={collapsedTreeIds}
+                            onToggleCollapse={toggleTreeCollapse}
+                            onSelectFileByPath={openFileByPath}
+                            selectedFileId={selectedFileId}
+                          />
                         </div>
-                      )
-                    })}
-                  </div>
-                </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
 
@@ -377,23 +466,19 @@ export default function MemoryManagementPage() {
                         Include In Context
                       </button>
                     )}
-                    <button
-                      onClick={() => handleDeleteRequest(selectedContent.path)}
-                      className="px-2.5 py-1.5 text-xs rounded border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      Request Delete (Agent)
-                    </button>
+                    {isSessionMode && (
+                      <button
+                        onClick={() => handleDelete(selectedContent.path)}
+                        disabled={actionLoading}
+                        className="px-2.5 py-1.5 text-xs rounded border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        Delete File
+                      </button>
+                    )}
                   </div>
                   {agentDeleteRequest && (
-                    <div className="mt-3 p-3 rounded border border-red-200 bg-red-50">
-                      <p className="text-xs font-medium text-red-700">Agent Deletion Request</p>
-                      <pre className="mt-2 text-xs whitespace-pre-wrap break-words text-red-800">{agentDeleteRequest}</pre>
-                      <button
-                        onClick={copyDeleteRequest}
-                        className="mt-2 px-2 py-1 text-xs rounded border border-red-300 text-red-700 bg-white hover:bg-red-100"
-                      >
-                        Copy Request
-                      </button>
+                    <div className="mt-3 p-2 rounded border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950">
+                      <p className="text-xs text-amber-700 dark:text-amber-400">{agentDeleteRequest}</p>
                     </div>
                   )}
                   <div className="mt-3 max-h-[70vh] overflow-y-auto pr-1">

@@ -170,7 +170,54 @@ function collectAgentCacheMemoryFiles(): string[] {
     path.join(home, '.openclaw', 'MEMORY.md'),
     path.join(home, '.codex', 'MEMORY.md'),
   ]
-  return candidates.filter(p => fs.existsSync(p) && fs.statSync(p).isFile())
+  // Scan ~/.claude/projects/*/memory/*.md
+  const claudeProjectsDir = path.join(home, '.claude', 'projects')
+  try {
+    if (fs.existsSync(claudeProjectsDir) && fs.statSync(claudeProjectsDir).isDirectory()) {
+      const projectDirs = fs.readdirSync(claudeProjectsDir, { withFileTypes: true })
+      for (const entry of projectDirs) {
+        if (!entry.isDirectory()) continue
+        const memoryDir = path.join(claudeProjectsDir, entry.name, 'memory')
+        try {
+          if (fs.existsSync(memoryDir) && fs.statSync(memoryDir).isDirectory()) {
+            const mdFiles = fs.readdirSync(memoryDir).filter(f => f.toLowerCase().endsWith('.md'))
+            for (const mdFile of mdFiles) {
+              candidates.push(path.join(memoryDir, mdFile))
+            }
+          }
+        } catch {
+          continue
+        }
+      }
+    }
+  } catch {
+    // ignore errors scanning claude projects
+  }
+  return candidates.filter(p => {
+    try { return fs.existsSync(p) && fs.statSync(p).isFile() } catch { return false }
+  })
+}
+
+function collectAutoContextFiles(projectRoot: string): string[] {
+  const auto: string[] = []
+  // CLAUDE.md in project root and up to 3 parent dirs
+  let dir = projectRoot
+  for (let i = 0; i < 4; i++) {
+    const candidate = path.join(dir, 'CLAUDE.md')
+    if (fs.existsSync(candidate)) auto.push(candidate)
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  // MEMORY.md in project root
+  const memoryMd = path.join(projectRoot, 'MEMORY.md')
+  if (fs.existsSync(memoryMd)) auto.push(memoryMd)
+  // Agent cache memory files (these are also "in context" for the agent)
+  auto.push(...collectAgentCacheMemoryFiles())
+  // Persisted included paths
+  const prefs = readMemoryPreferenceState()
+  auto.push(...prefs.includedPaths)
+  return auto
 }
 
 function toId(value: string): string {
@@ -271,9 +318,12 @@ export function buildMemoryCatalog(input: {
     ...persistedDirectories,
     ...((input.extraMarkdownDirs ?? []).map(dir => normalizeInputPath(projectRoot, dir)).filter(Boolean)),
   ])
+  const autoContext = input.currentContextFiles
+    ? input.currentContextFiles.map(p => normalizeInputPath(projectRoot, p))
+    : collectAutoContextFiles(projectRoot).map(p => normalizeInputPath(projectRoot, p))
   const currentContextSet = new Set([
     ...persistedIncludes,
-    ...(input.currentContextFiles ?? []).map(p => normalizeInputPath(projectRoot, p)),
+    ...autoContext,
     ...(input.extraFilePaths ?? []).map(p => normalizeInputPath(projectRoot, p)).filter(Boolean),
   ])
   const relatedMarkdown = uniqueSortedPaths([

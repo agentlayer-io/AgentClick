@@ -110,6 +110,7 @@ export default function App() {
         <Route path="/plan/:id" element={<PlanPage />} />
         <Route path="/plan-test" element={<PlanTestPage />} />
         <Route path="/memory-management" element={<MemoryManagementPage />} />
+        <Route path="/memory-management/:id" element={<MemoryManagementPage />} />
         <Route path="/memory/:id" element={<MemoryReviewPage />} />
         <Route path="/memory-test" element={<MemoryTestPage />} />
         <Route path="/ports" element={<PortsPage />} />
