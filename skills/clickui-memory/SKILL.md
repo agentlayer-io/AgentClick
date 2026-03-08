@@ -70,9 +70,9 @@ Use this for file browsing (not approval completion):
 - Open a file: `GET /api/memory/file?path=<absolute-path>`
 - UI route: `/memory-management`
 
-## Wait Protocol
+## Poll Protocol
 
-After creating a `memory_review` session, block on:
+After creating a `memory_review` session, poll for the decision:
 
 ```bash
 if curl -s --max-time 1 http://localhost:38173/api/health > /dev/null 2>&1; then
@@ -81,7 +81,17 @@ else
   AGENTCLICK_BASE="http://host.docker.internal:38173"
 fi
 
-curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/wait"
+# Detect environment: GOG_ACCOUNT is set in Docker (docker-compose.yml), absent elsewhere
+if [ -n "$GOG_ACCOUNT" ]; then
+  # Docker: use short-poll (one curl per exec, you are the loop controller)
+  curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}"
+else
+  # Non-Docker: use blocking /wait
+  curl -s --max-time 310 "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/wait"
+fi
 ```
 
-If status is `rewriting`, update payload via `PUT /api/sessions/:id/payload` and wait again.
+- In Docker (`GOG_ACCOUNT` set): run ONE curl per exec call, check result in your context, then poll again. Do NOT use a bash while loop. You are the loop controller.
+- In non-Docker: the `/wait` call blocks until state changes, then process the result.
+
+If status is `rewriting`, update payload via `PUT /api/sessions/:id/payload` and poll again.
