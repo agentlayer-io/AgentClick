@@ -40,6 +40,9 @@ AgentClick extends the interaction into a browser UI so the agent can hand off a
 
 The goal is simple: keep the speed of terminal agents, but add a real review layer before the agent commits to irreversible work.
 
+AgentClick is a good fit for agent environments such as Claude Code, Codex, and OpenClaw.
+For OpenClaw in particular, use a stronger model with solid instruction-following, since the workflow is skill-based and depends on the agent following routing and review instructions reliably.
+
 ---
 
 ## Why It Helps
@@ -83,6 +86,9 @@ Prompt:
 ```text
 Download agentlayer-io/AgentClick, load its SKILL.md, start it locally, and use it whenever you need a browser review UI instead of only terminal output.
 ```
+
+Supported agent setups include Claude Code, Codex, and OpenClaw.
+For OpenClaw, prefer a stronger model rather than a cheaper weaker one, because the skill-routing flow works best when the model follows instructions consistently.
 
 If the agent supports sub-skills, the root [`SKILL.md`](./SKILL.md) routes to the right one automatically.
 
