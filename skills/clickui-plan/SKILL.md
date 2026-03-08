@@ -161,24 +161,33 @@ SESSION_ID=$(echo "$RESPONSE" | grep -o '"sessionId":"[^"]*"' | cut -d'"' -f4)
 echo "Session: $SESSION_ID"
 ```
 
-## Wait Protocol (Required)
+## Poll Protocol (Required)
 
-After creating the session, immediately block on `/wait` for that same session. Do not continue execution before `/wait` returns a decision.
+After creating the session, poll for the decision. Do not continue execution before the session reaches a completed or rewriting state.
 
 ```bash
-curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/wait"
+# Detect environment: GOG_ACCOUNT is set in Docker (docker-compose.yml), absent elsewhere
+if [ -n "$GOG_ACCOUNT" ]; then
+  # Docker: use short-poll (one curl per exec, you are the loop controller)
+  curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}"
+else
+  # Non-Docker: use blocking /wait
+  curl -s --max-time 310 "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/wait"
+fi
 ```
+
+- In Docker (`GOG_ACCOUNT` set): run ONE curl per exec call, check result in your context, then poll again. Do NOT use a bash while loop. You are the loop controller.
+- In non-Docker: the `/wait` call blocks until state changes, then process the result.
 
 Rules:
 
-- Do not ask the user for duplicate confirmation in chat while waiting.
+- Do not ask the user for duplicate confirmation in chat while polling.
 - Do not create a second review session for the same plan unless the first one is abandoned.
-- Treat `/wait` as the single source of truth for approval state.
-- AgentClick does not auto-push approval into your local agent process; the agent must keep an active `/wait` poll to receive the decision.
+- Treat the session status field as the single source of truth for approval state.
 
 ## Result Schema
 
-The human's response is returned via `/api/sessions/:id/wait`:
+The human's response is returned via `/api/sessions/:id` (poll) or `/api/sessions/:id/wait` (non-Docker blocking):
 
 ```json
 {
@@ -206,7 +215,7 @@ The human's response is returned via `/api/sessions/:id/wait`:
 ## Rewrite Cycle
 
 1. Human reviews plan and clicks "Regenerate"
-2. Agent's `/wait` poll resolves with `status: "rewriting"` and the human's feedback
+2. Agent's poll (or `/wait` in non-Docker) resolves with `status: "rewriting"` and the human's feedback
 3. Agent revises the plan based on modifications, constraints, and notes
 4. Agent PUTs updated payload: `PUT /api/sessions/:id/payload`
 5. Human reviews again (status resets to `pending`)
@@ -217,4 +226,4 @@ The human's response is returned via `/api/sessions/:id/wait`:
 - **rejected**: Stop execution, do not proceed
 - **regenerate**: Revise the plan incorporating human feedback, then PUT updated payload for re-review
 
-If `/wait` times out (HTTP 408), ask the user whether to keep waiting or cancel.
+If the session has been `pending` for a very long time with no user action (or `/wait` returns HTTP 408 in non-Docker), ask the user whether to keep polling or cancel.
