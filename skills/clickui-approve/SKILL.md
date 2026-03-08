@@ -32,14 +32,22 @@ echo "$RESPONSE"
 
 Save the `sessionId` from the response.
 
-## Step 2: Wait for decision (blocks up to 5 minutes)
+## Step 2: Poll for decision
 
 ```bash
 SESSION_ID="<sessionId from Step 1>"
-curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/wait"
+# Detect environment: GOG_ACCOUNT is set in Docker (docker-compose.yml), absent elsewhere
+if [ -n "$GOG_ACCOUNT" ]; then
+  # Docker: use short-poll (one curl per exec, you are the loop controller)
+  curl -s "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}"
+else
+  # Non-Docker: use blocking /wait
+  curl -s --max-time 310 "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/wait"
+fi
 ```
 
-The browser opens automatically. This call blocks until the user submits.
+- In Docker (`GOG_ACCOUNT` set): run ONE curl per exec call, check result in your context, then poll again. Do NOT use a bash while loop. You are the loop controller.
+- In non-Docker: the `/wait` call blocks until the user submits, then process the result.
 
 ## Step 3: Act on the decision
 
