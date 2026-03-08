@@ -743,7 +743,26 @@ app.put('/api/sessions/:id/payload', (req, res) => {
   if (session.status !== 'rewriting') return res.status(400).json({ error: 'Session is not in rewriting state' })
 
   console.log(`[agentclick] Payload update requested for ${session.id} (status=${session.status}, revision=${session.revision})`)
-  updateSessionPayload(req.params.id, req.body.payload)
+
+  // For email_review: merge incoming inbox items by id instead of replacing the whole inbox.
+  // Agent PUTs only the target email when updating a reply draft; all other emails must be preserved.
+  let finalPayload = req.body.payload
+  if (session.type === 'email_review') {
+    const existingPayload = session.payload as Record<string, unknown>
+    const existingInbox = Array.isArray(existingPayload?.inbox) ? existingPayload.inbox as Array<Record<string, unknown>> : []
+    const incomingInbox = Array.isArray(finalPayload?.inbox) ? finalPayload.inbox as Array<Record<string, unknown>> : []
+    if (incomingInbox.length > 0) {
+      const incomingById = new Map(incomingInbox.map(e => [e.id, e]))
+      const merged = existingInbox.map(e => incomingById.has(e.id) ? { ...e, ...incomingById.get(e.id) } : e)
+      // Append any new emails not in existing inbox
+      for (const e of incomingInbox) {
+        if (!existingInbox.some(x => x.id === e.id)) merged.push(e)
+      }
+      finalPayload = { ...finalPayload, inbox: merged }
+    }
+  }
+
+  updateSessionPayload(req.params.id, finalPayload)
   const updated = getSession(req.params.id)
   const newRevision = updated?.revision ?? session.revision + 1
   console.log(`[agentclick] Session ${session.id} payload updated, back to pending (revision=${newRevision})`)
