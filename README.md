@@ -157,6 +157,12 @@ npm start
 
 ---
 
+## ⭐ Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=agentlayer-io/AgentClick&type=Date)](https://star-history.com/#agentlayer-io/AgentClick&Date)
+
+---
+
 ## 📜 License
 
 [MIT](./LICENSE)
