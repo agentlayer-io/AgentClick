@@ -19,6 +19,7 @@
     "type": "git",
     "url": "https://github.com/agentlayer-io/AgentClick.git"
   },
+  "license": "MIT",
   "homepage": "https://github.com/agentlayer-io/AgentClick",
   "bin": {
     "agentclick": "./bin/agentclick.mjs"
