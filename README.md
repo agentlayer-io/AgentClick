@@ -16,6 +16,7 @@
   <a href="https://www.npmjs.com/package/@harvenstar/agentclick"><img src="https://img.shields.io/npm/v/%40harvenstar%2fagentclick" alt="npm version"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/npm/l/%40harvenstar%2fagentclick" alt="license"></a>
   <a href="https://www.npmjs.com/package/@harvenstar/agentclick"><img src="https://img.shields.io/npm/dm/%40harvenstar%2fagentclick" alt="npm downloads"></a>
+  <a href="https://github.com/agentlayer-io/AgentClick"><img src="https://img.shields.io/github/stars/agentlayer-io/AgentClick?style=social" alt="GitHub stars"></a>
 </p>
 
 ---
