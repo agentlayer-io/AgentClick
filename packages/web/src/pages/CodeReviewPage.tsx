@@ -666,7 +666,7 @@ export default function CodeReviewPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-zinc-950">
-      <div className="max-w-3xl mx-auto py-10 px-4">
+      <div className="max-w-full mx-auto py-10 px-4">
 
         {isCompleted && (
           <div className="mb-6 px-4 py-3 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg flex items-center justify-between">

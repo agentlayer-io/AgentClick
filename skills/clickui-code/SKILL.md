@@ -79,7 +79,7 @@ echo "Session: $SESSION_ID"
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `path` | yes | File path relative to `cwd` |
+| `path` | yes | File path relative to project root (e.g. `packages/web/src/pages/Foo.tsx`) |
 | `status` | yes | `"added"` \| `"modified"` \| `"deleted"` \| `"renamed"` |
 | `diff` | **recommended** | Unified diff string — shown as a GitHub-style diff in the review UI |
 | `oldPath` | no | Previous path, only for `"renamed"` files |
