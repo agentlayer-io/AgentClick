@@ -762,8 +762,9 @@ app.get('/api/sessions/:id/wait', async (req, res) => {
   while (Date.now() - start < TIMEOUT_MS) {
     const session = getSession(req.params.id)
     if (!session) return res.status(404).json({ error: 'Session not found' })
-    if (session.status === 'completed' || session.status === 'rewriting') {
-      console.log(`[agentclick] /wait returning ${session.status} for ${session.id} (revision=${session.revision})`)
+    const ps = session.pageStatus as Record<string, unknown> | undefined
+    if (session.status === 'completed' || session.status === 'rewriting' || ps?.stopMonitoring === true) {
+      console.log(`[agentclick] /wait returning ${session.status} for ${session.id} (revision=${session.revision}, stopMonitoring=${ps?.stopMonitoring ?? false})`)
       return res.json(session)
     }
     await new Promise(r => setTimeout(r, POLL_MS))

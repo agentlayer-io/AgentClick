@@ -170,9 +170,8 @@ else
 fi
 ```
 
-After each poll:
-- Inspect `status`, `result`, and `pageStatus`
-- If `pageStatus.stopMonitoring` is `true` → stop
+After each poll result:
+- If `pageStatus.stopMonitoring` is `true` → **stop immediately** (the `/wait` endpoint unblocks on this)
 - If `status` is `"completed"` → stop
 - If `status` is `"rewriting"` → handle the request (see Rewrite / Update Rules below), then poll again
 - Otherwise → wait 1 second (`sleep 1` as a separate exec), then poll again
@@ -192,39 +191,55 @@ The UI is not only a final approval screen. The user may:
 
 ### Reply requests
 
-If the result indicates `requestReplyDraft: true` for an email:
-- update the payload quickly so the UI can show that email as loading
-- generate the reply draft yourself as the agent — use the email body already present in the poll response payload (do not re-fetch from Gmail)
-- PUT the finished draft back into the same session
-- do not create a new session
+When the result has `requestReplyDraft: true`, follow this exact two-PUT sequence:
 
-**Important:** The reply draft must be placed **on the email item itself**, not in `payload.draft`. The UI reads `replyState`, `replyDraft`, and `replyUnread` from the individual email object in the inbox array.
+**PUT 1 — mark as loading** (do this immediately so the UI shows a spinner):
 
-Reply draft fields on the email item:
-```json
+```bash
+curl -s -X PUT "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/payload" \
+  -H "Content-Type: application/json" \
+  -d "{\"payload\":{\"inbox\":[{\"id\":\"${EMAIL_ID}\",\"replyState\":\"loading\"}]}}"
+```
+
+**Generate the reply** — use the email body from the poll response payload. Do not re-fetch from Gmail.
+
+**PUT 2 — deliver the draft** (`replyState: "ready"` with the full draft):
+
+```bash
+cat > /tmp/reply_put.json <<JSON
 {
-  "id": "gmail-message-id",
-  "replyState": "ready",
-  "replyUnread": false,
-  "replyDraft": {
-    "replyTo": "sender@example.com",
-    "to": "sender@example.com",
-    "subject": "Re: Original subject",
-    "paragraphs": [
-      {"id": "p1", "content": "Paragraph 1"},
-      {"id": "p2", "content": "Paragraph 2"}
+  "payload": {
+    "inbox": [
+      {
+        "id": "TARGET_EMAIL_ID",
+        "replyState": "ready",
+        "replyUnread": true,
+        "replyDraft": {
+          "replyTo": "TARGET_EMAIL_ID",
+          "to": "sender@example.com",
+          "subject": "Re: Original subject",
+          "paragraphs": [
+            {"id": "p1", "content": "First paragraph text"},
+            {"id": "p2", "content": "Second paragraph text"}
+          ]
+        }
+      }
     ]
   }
 }
+JSON
+curl -s -X PUT "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/payload" \
+  -H "Content-Type: application/json" \
+  -d @/tmp/reply_put.json
 ```
 
-Valid `replyState` values: `"idle"` (default), `"loading"` (agent is generating), `"ready"` (draft available).
+> **CRITICAL — paragraph format:** `paragraphs` must be an array of `{"id": "p1", "content": "..."}` objects. Plain strings will break the UI. The `id` can be any unique string (e.g. `"p1"`, `"p2"`).
 
-The UI expects:
-- lazy reply generation
-- folded reply draft by default
-- the user can keep browsing while reply is loading
-- the email row can later show a ready state and unread dot when the draft arrives
+> **CRITICAL — placement:** The draft goes inside the email item in `inbox`, NOT in `payload.draft`. The UI reads `replyState` and `replyDraft` from the individual email object.
+
+Valid `replyState` values: `"idle"` (default), `"loading"` (generating), `"ready"` (draft available).
+
+Why two PUTs: The server keeps the session in `rewriting` state as long as any email has `replyState: "loading"`. PUT 1 sets loading to lock the rewriting state open; PUT 2 delivers the finished draft. Without PUT 1, the session drops back to `pending` between calls and the second PUT is rejected.
 
 ### Read more requests
 
@@ -286,8 +301,9 @@ curl -s -X PUT "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/payload" \
 
 Rules:
 - Reuse the same `SESSION_ID` for the full interaction.
-- **Two-PUT pattern for replies:** first PUT a loading-state update (`replyState: "loading"`), then PUT the completed draft (`replyState: "ready"` with `replyDraft`). The server keeps the session in `rewriting` status as long as any email has `replyState: "loading"`, so the second PUT is accepted.
-- If PUT fails, fix it before continuing.
+- For reply drafts, always use the two-PUT sequence described in the Reply requests section above.
+- If PUT fails with `"Session is not in rewriting state"`, the loading email item was not set — re-trigger by calling `/complete` with `regenerate: true`, then repeat the two-PUT sequence.
+- If PUT fails for any other reason, fix it before continuing.
 
 ## Completion Rules
 
