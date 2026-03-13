@@ -7,6 +7,14 @@ description: Use this skill when you are about to take a consequential or irreve
 
 When you are about to take a high-risk action (sending messages, deleting data, calling external APIs), use these steps.
 
+## Preferences
+
+Before submitting an action for approval, fetch user preferences and apply any rules under `## Action Approval`:
+
+```bash
+curl -s "$AGENTCLICK_BASE/api/preferences/style"
+```
+
 ## Step 1: Submit for approval
 
 ```bash

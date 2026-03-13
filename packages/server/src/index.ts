@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { promisify } from 'util'
-import { learnFromDeletions, learnFromRewrite, learnFromTrajectoryRevisions, learnFromCodeRejection, learnFromActionRejection, getLearnedPreferences, clearPreferences, deletePreference } from './preference.js'
+import { learnFromDeletions, learnFromRewrite, learnFromTrajectoryRevisions, learnFromCodeRejection, learnFromActionRejection, learnFromUserIntention, getUserPreferences, getLearnedPreferences, clearPreferences, deletePreference } from './preference.js'
 import { createSession, getSession, listSessions, completeSession, setSessionRewriting, updateSessionPageStatus, updateSessionPayload, updateSessionPayloadKeepStatus } from './store.js'
 import {
   buildMemoryCatalog,
@@ -607,6 +607,11 @@ app.get('/api/preferences', (_req, res) => {
   res.json({ preferences: getLearnedPreferences() })
 })
 
+// User style preferences from preferences.md
+app.get('/api/preferences/style', (_req, res) => {
+  res.type('text/plain').send(getUserPreferences())
+})
+
 app.delete('/api/preferences', (_req, res) => {
   clearPreferences()
   console.log('[agentclick] Cleared all learned preferences from MEMORY.md')
@@ -870,6 +875,12 @@ app.post('/api/sessions/:id/complete', async (req, res) => {
     const rewriteActions = (req.body.actions ?? []) as Array<{ type: string; paragraphId: string; reason?: string; instruction?: string; shouldLearn?: boolean }>
     learnFromDeletions(rewriteActions, session.payload as Record<string, unknown>)
     learnFromRewrite(rewriteActions, session.payload as Record<string, unknown>)
+    // Save userIntention to preferences.md
+    const userIntention = req.body.userIntention as string | undefined
+    if (userIntention) {
+      const scope = session.type?.replace('_review', '') ?? 'general'
+      learnFromUserIntention(userIntention, scope)
+    }
     res.json({ ok: true, rewriting: true })
     return
   }

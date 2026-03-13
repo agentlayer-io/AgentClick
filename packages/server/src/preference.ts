@@ -3,6 +3,52 @@ import path from 'path'
 import os from 'os'
 
 const MEMORY_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'MEMORY.md')
+const PREFERENCES_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'click_preferences.md')
+
+const SCOPE_SECTIONS: Record<string, string> = {
+  email: '## Email Reply Style',
+  trajectory: '## Trajectory',
+  code: '## Code Review',
+  action: '## Action Approval',
+}
+
+function ensurePrefFile(): void {
+  const dir = path.dirname(PREFERENCES_PATH)
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  if (!fs.existsSync(PREFERENCES_PATH)) {
+    fs.writeFileSync(PREFERENCES_PATH, '# AgentClick Preferences\n', 'utf-8')
+  }
+
+}
+
+export function getUserPreferences(): string {
+  if (!fs.existsSync(PREFERENCES_PATH)) return ''
+  return fs.readFileSync(PREFERENCES_PATH, 'utf-8')
+}
+
+export function learnFromUserIntention(intention: string, scope: string): void {
+  const trimmed = intention.trim()
+  if (!trimmed) return
+
+  ensurePrefFile()
+  const content = fs.readFileSync(PREFERENCES_PATH, 'utf-8')
+  const section = SCOPE_SECTIONS[scope] ?? `## ${scope}`
+  const rule = `- ${summarize(trimmed)}`
+
+  // Skip if exact rule already exists
+  if (content.includes(rule)) return
+
+  if (content.includes(section)) {
+    const lines = content.split('\n')
+    const idx = lines.findIndex(l => l === section)
+    lines.splice(idx + 1, 0, rule)
+    fs.writeFileSync(PREFERENCES_PATH, lines.join('\n'), 'utf-8')
+  } else {
+    fs.appendFileSync(PREFERENCES_PATH, `\n${section}\n${rule}\n`, 'utf-8')
+  }
+
+  console.log(`[agentclick] Saved user intention to click_preferences.md -> ${PREFERENCES_PATH}`)
+}
 const SECTION_HEADER = '## Email Preferences (ClickUI Auto-Learned)'
 const TRAJECTORY_SECTION_HEADER = '## Trajectory Guidance (ClickUI Auto-Learned)'
 const CODE_SECTION_HEADER = '## Code Review Preferences (ClickUI Auto-Learned)'

@@ -7,6 +7,14 @@ description: Use this skill when you want to run a shell command that could be d
 
 Before running risky shell commands, get user approval via this skill. Always show the user exactly which files will change and what the diffs look like — this is the default, not optional.
 
+## Preferences
+
+Before submitting a command for review, fetch user preferences and apply any rules under `## Code Review`:
+
+```bash
+curl -s "$AGENTCLICK_BASE/api/preferences/style"
+```
+
 ## Step 1: Generate the diff
 
 Before submitting, capture the exact changes so the user can see them in the review UI.

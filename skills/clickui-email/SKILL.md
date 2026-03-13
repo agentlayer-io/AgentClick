@@ -31,6 +31,20 @@ If the task is email work plus live session handling in UI, use this skill over 
 - Reply generation is lazy: generate only after the user clicks `Reply`.
 - The reply text comes from the agent's own generation unless the user wired some other drafting system explicitly.
 
+## Preferences
+
+Before opening a session, fetch user style preferences and apply any rules under `## Email Reply Style` to every reply draft in this session:
+
+```bash
+curl -s "$AGENTCLICK_BASE/api/preferences/style"
+```
+
+## Session Style Rules
+
+When the poll result includes `userIntention`, treat it as a **session-level style rule** — apply it to every subsequent reply draft in this session, not just the current one. It is also automatically saved to preferences by the server.
+
+Example: if `userIntention` is `"say Hiiii instead of Hi"`, every reply generated after that point must use "Hiiii".
+
 ## Step 1: Ensure AgentClick is running
 
 ```bash

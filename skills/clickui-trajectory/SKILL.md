@@ -189,6 +189,14 @@ curl -s -X PUT "$AGENTCLICK_BASE/api/sessions/${SESSION_ID}/payload" \
 }
 ```
 
+## Preferences
+
+Before submitting a trajectory, fetch user preferences and apply any rules under `## Trajectory`:
+
+```bash
+curl -s "$AGENTCLICK_BASE/api/preferences/style"
+```
+
 ## Learning
 
 When a human marks a step wrong with "Remember this for future runs" checked, a rule is written to `~/.openclaw/workspace/MEMORY.md`:
