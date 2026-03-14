@@ -44,6 +44,7 @@ skills/
   clickui-email/        Email live session skill
   clickui-plan/         Plan review skill
   clickui-trajectory/   Trajectory review skill
+  clickui-selection/    Selection review skill
   clickui-memory/       Memory review skill
 ```
 
