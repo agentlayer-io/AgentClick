@@ -20,6 +20,10 @@
   <a href="https://github.com/agentlayer-io/AgentClick"><img src="https://img.shields.io/github/stars/agentlayer-io/AgentClick?style=social" alt="GitHub stars"></a>
 </p>
 
+<p align="center">
+  <a href="https://youtu.be/Yb0rgJJcKBY"><b>▶ Watch the Demo (5 min)</b></a>
+</p>
+
 ---
 
 ## ⚙️ How It Works
@@ -55,10 +59,13 @@ AgentClick works as a **skill / plugin** for modern AI agents. Any agent that ca
 
 AgentClick extends the agent interaction into a browser UI for tasks like:
 
-- 📧 email drafting and inbox triage
-- 🖥️ shell commands and risky actions
-- 📋 plans and execution trajectories
-- 🧠 memory review and updates
+- 📧 **Email Review** — browse inbox, edit drafts paragraph-by-paragraph, preference learning
+- 📋 **Plan Review** — inspect multi-step plans, inject constraints before execution
+- 🖥️ **Code Review** — GitHub-style diff viewer before any script runs
+- ✅ **Action Approval** — approve or reject external actions with reasons
+- 🔍 **Trajectory Inspection** — replay every decision, tool call, and error in a DAG
+- 🗳️ **Selection Review** — agent presents options, you choose
+- 🧠 **Memory Management** — control what the agent remembers across sessions
 
 The goal: keep the speed of terminal agents, but add a real review layer before the agent commits to irreversible work.
 
@@ -128,6 +135,7 @@ AgentClick is built around a **skill-based architecture**. The root [`SKILL.md`]
 | Email Review | `skills/clickui-email/` | Review inbox items, drafts, replies, and live email sessions. | `Open my inbox in AgentClick UI and let me triage emails.` |
 | Plan Review | `skills/clickui-plan/` | Inspect and revise proposed plans before the agent runs them. | `Show me the plan in AgentClick UI before you start.` |
 | Trajectory Review | `skills/clickui-trajectory/` | Review multi-step runs, mistakes, and resume points. | `Show me what you just did in AgentClick UI so I can review the steps.` |
+| Selection Review | `skills/clickui-selection/` | Present options to the user and capture their choice. | `Show me the options in AgentClick UI and let me choose.` |
 | Memory Review | `skills/clickui-memory/` | Review memory files and memory-management changes. | `Open memory management in AgentClick UI and let me pick which files to include.` |
 
 In most cases, telling the agent to load the root skill is enough.
