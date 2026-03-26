@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { promisify } from 'util'
-import { learnFromDeletions, learnFromRewrite, learnFromTrajectoryRevisions, learnFromCodeRejection, learnFromActionRejection, learnFromUserIntention, getUserPreferences, getLearnedPreferences, clearPreferences, deletePreference } from './preference.js'
+import { learnFromDeletions, learnFromRewrite, learnFromTrajectoryRevisions, learnFromCodeRejection, learnFromActionRejection, learnFromUserIntention, savePreferenceRule, deletePreferenceRule, replacePreferenceRule, getUserPreferences, getLearnedPreferences, clearPreferences, deletePreference } from './preference.js'
 import { createSession, getSession, listSessions, completeSession, setSessionRewriting, updateSessionPageStatus, updateSessionPayload, updateSessionPayloadKeepStatus } from './store.js'
 import {
   buildMemoryCatalog,
@@ -607,9 +607,33 @@ app.get('/api/preferences', (_req, res) => {
   res.json({ preferences: getLearnedPreferences() })
 })
 
-// User style preferences from preferences.md
+// User style preferences from click_preferences.md
 app.get('/api/preferences/style', (_req, res) => {
   res.type('text/plain').send(getUserPreferences())
+})
+
+// Save a preference rule (force, no conflict check)
+app.post('/api/preferences/style', (req, res) => {
+  const { rule, scope } = req.body
+  if (!rule || !scope) return res.status(400).json({ error: 'rule and scope required' })
+  savePreferenceRule(rule, scope)
+  res.json({ ok: true })
+})
+
+// Replace an existing rule with a new one
+app.put('/api/preferences/style', (req, res) => {
+  const { oldRule, newRule, scope } = req.body
+  if (!oldRule || !newRule || !scope) return res.status(400).json({ error: 'oldRule, newRule, and scope required' })
+  replacePreferenceRule(oldRule, newRule, scope)
+  res.json({ ok: true })
+})
+
+// Delete a specific rule
+app.delete('/api/preferences/style', (req, res) => {
+  const { rule, scope } = req.body
+  if (!rule || !scope) return res.status(400).json({ error: 'rule and scope required' })
+  deletePreferenceRule(rule, scope)
+  res.json({ ok: true })
 })
 
 app.delete('/api/preferences', (_req, res) => {
@@ -875,11 +899,19 @@ app.post('/api/sessions/:id/complete', async (req, res) => {
     const rewriteActions = (req.body.actions ?? []) as Array<{ type: string; paragraphId: string; reason?: string; instruction?: string; shouldLearn?: boolean }>
     learnFromDeletions(rewriteActions, session.payload as Record<string, unknown>)
     learnFromRewrite(rewriteActions, session.payload as Record<string, unknown>)
-    // Save userIntention to preferences.md
+    // Save userIntention to preferences, detect conflicts
     const userIntention = req.body.userIntention as string | undefined
     if (userIntention) {
       const scope = session.type?.replace('_review', '') ?? 'general'
-      learnFromUserIntention(userIntention, scope)
+      const prefResult = learnFromUserIntention(userIntention, scope)
+      if (prefResult.conflict) {
+        // Attach conflict to the session result so the agent can resolve it
+        req.body.preferenceConflict = prefResult.conflict
+        setSessionRewriting(req.params.id, req.body)
+        updateSessionPageStatus(req.params.id, { state: 'submitted', updatedAt: Date.now() })
+        res.json({ ok: true, rewriting: true })
+        return
+      }
     }
     res.json({ ok: true, rewriting: true })
     return

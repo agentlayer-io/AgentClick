@@ -134,6 +134,14 @@ Submit a multi-step execution plan to AgentClick for human review. The human can
 | `medium` | Some risk, may need attention        |
 | `high`   | Dangerous, hard to reverse           |
 
+## Preferences
+
+Before submitting a plan, fetch user preferences and apply any rules under `## Plan`:
+
+```bash
+curl -s "$AGENTCLICK_BASE/api/preferences/style"
+```
+
 ## Submitting a Plan
 
 ```bash

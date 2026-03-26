@@ -10,6 +10,7 @@ const SCOPE_SECTIONS: Record<string, string> = {
   trajectory: '## Trajectory',
   code: '## Code Review',
   action: '## Action Approval',
+  plan: '## Plan',
 }
 
 function ensurePrefFile(): void {
@@ -26,28 +27,96 @@ export function getUserPreferences(): string {
   return fs.readFileSync(PREFERENCES_PATH, 'utf-8')
 }
 
-export function learnFromUserIntention(intention: string, scope: string): void {
+const STOP_WORDS = new Set(['a','an','the','is','are','was','were','be','been','being','have','has','had','do','does','did','will','would','could','should','may','might','shall','use','using','in','on','at','to','for','of','and','or','but','not','with','from','by','instead','rather','more','less'])
+
+function ruleWords(s: string): Set<string> {
+  return new Set(s.toLowerCase().split(/\W+/).filter(w => w.length > 2 && !STOP_WORDS.has(w)))
+}
+
+function detectConflict(incoming: string, existing: string): boolean {
+  const inWords = ruleWords(incoming)
+  const exWords = ruleWords(existing)
+  const overlap = [...inWords].filter(w => exWords.has(w))
+  return overlap.length >= 1
+}
+
+function getSectionRules(content: string, section: string): string[] {
+  if (!content.includes(section)) return []
+  const lines = content.split('\n')
+  const idx = lines.findIndex(l => l === section)
+  const rules: string[] = []
+  for (let i = idx + 1; i < lines.length; i++) {
+    if (lines[i].startsWith('## ')) break
+    if (lines[i].startsWith('- ')) rules.push(lines[i].slice(2))
+  }
+  return rules
+}
+
+export interface PreferenceConflict {
+  existing: string
+  incoming: string
+}
+
+export function learnFromUserIntention(intention: string, scope: string): { saved: boolean; conflict?: PreferenceConflict } {
   const trimmed = intention.trim()
-  if (!trimmed) return
+  if (!trimmed) return { saved: false }
 
   ensurePrefFile()
   const content = fs.readFileSync(PREFERENCES_PATH, 'utf-8')
   const section = SCOPE_SECTIONS[scope] ?? `## ${scope}`
-  const rule = `- ${summarize(trimmed)}`
+  const incoming = summarize(trimmed)
 
-  // Skip if exact rule already exists
-  if (content.includes(rule)) return
+  // Skip exact duplicate
+  if (content.includes(`- ${incoming}`)) return { saved: true }
 
+  // Check for conflict with existing rules in this section
+  const existing = getSectionRules(content, section)
+  for (const rule of existing) {
+    if (detectConflict(incoming, rule)) {
+      console.log(`[agentclick] Preference conflict detected: "${rule}" vs "${incoming}"`)
+      return { saved: false, conflict: { existing: rule, incoming } }
+    }
+  }
+
+  // No conflict — save
+  savePreferenceRule(incoming, scope)
+  return { saved: true }
+}
+
+export function savePreferenceRule(rule: string, scope: string): void {
+  ensurePrefFile()
+  const content = fs.readFileSync(PREFERENCES_PATH, 'utf-8')
+  const section = SCOPE_SECTIONS[scope] ?? `## ${scope}`
+  const line = `- ${rule}`
+  if (content.includes(line)) return
   if (content.includes(section)) {
     const lines = content.split('\n')
     const idx = lines.findIndex(l => l === section)
-    lines.splice(idx + 1, 0, rule)
+    lines.splice(idx + 1, 0, line)
     fs.writeFileSync(PREFERENCES_PATH, lines.join('\n'), 'utf-8')
   } else {
-    fs.appendFileSync(PREFERENCES_PATH, `\n${section}\n${rule}\n`, 'utf-8')
+    fs.appendFileSync(PREFERENCES_PATH, `\n${section}\n${line}\n`, 'utf-8')
   }
+  console.log(`[agentclick] Saved preference rule -> ${PREFERENCES_PATH}`)
+}
 
-  console.log(`[agentclick] Saved user intention to click_preferences.md -> ${PREFERENCES_PATH}`)
+export function deletePreferenceRule(rule: string, scope: string): void {
+  if (!fs.existsSync(PREFERENCES_PATH)) return
+  const content = fs.readFileSync(PREFERENCES_PATH, 'utf-8')
+  const section = SCOPE_SECTIONS[scope] ?? `## ${scope}`
+  const lines = content.split('\n')
+  const idx = lines.findIndex(l => l === section)
+  if (idx === -1) return
+  const ruleIdx = lines.findIndex((l, i) => i > idx && l === `- ${rule}`)
+  if (ruleIdx === -1) return
+  lines.splice(ruleIdx, 1)
+  fs.writeFileSync(PREFERENCES_PATH, lines.join('\n'), 'utf-8')
+  console.log(`[agentclick] Deleted preference rule -> ${PREFERENCES_PATH}`)
+}
+
+export function replacePreferenceRule(oldRule: string, newRule: string, scope: string): void {
+  deletePreferenceRule(oldRule, scope)
+  savePreferenceRule(newRule, scope)
 }
 const SECTION_HEADER = '## Email Preferences (ClickUI Auto-Learned)'
 const TRAJECTORY_SECTION_HEADER = '## Trajectory Guidance (ClickUI Auto-Learned)'

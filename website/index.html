@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentClick - Human-in-the-loop review UI for AI agents</title>
+  <meta name="description" content="AgentClick adds a browser review layer to terminal AI agents. Agents propose, humans review and edit, then agents execute.">
+  <link rel="icon" href="assets/icon.png" type="image/png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #F8FAFC;
+      --surface: #FFFFFF;
+      --border: #E2E8F0;
+      --border-light: #F1F5F9;
+      --navy: #1D3557;
+      --teal: #2A9D8F;
+      --blue: #457B9D;
+      --accent: #A8DADC;
+      --text: #1D3557;
+      --text-muted: #64748B;
+      --text-subtle: #94A3B8;
+      --red: #E63946;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    /* Nav */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(248, 250, 252, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-light);
+    }
+    .nav-inner {
+      max-width: 1200px; margin: 0 auto;
+      padding: 0 24px;
+      height: 64px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none; color: var(--navy);
+      font-weight: 700; font-size: 18px;
+    }
+    .nav-brand img { width: 32px; height: 32px; border-radius: 8px; }
+    .nav-links { display: flex; gap: 28px; }
+    .nav-links a {
+      text-decoration: none; color: var(--text-muted);
+      font-size: 14px; font-weight: 500;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--navy); }
+    .nav-cta {
+      background: var(--navy); color: #fff !important;
+      padding: 8px 18px; border-radius: 8px;
+      font-size: 13px !important;
+      transition: background 0.2s;
+    }
+    .nav-cta:hover { background: #2a4a6b; }
+
+    /* Sections */
+    section { padding: 100px 24px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .section-label {
+      font-size: 12px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 1.5px; color: var(--teal);
+      margin-bottom: 12px;
+    }
+    .section-title {
+      font-size: 32px; font-weight: 700; color: var(--navy);
+      margin-bottom: 16px; line-height: 1.3;
+    }
+    .section-desc {
+      font-size: 17px; color: var(--text-muted);
+      max-width: 640px; line-height: 1.7;
+    }
+
+    /* Hero */
+    .hero {
+      padding-top: 160px; padding-bottom: 80px;
+      text-align: center;
+    }
+    .hero-icon {
+      width: 80px; height: 80px; border-radius: 20px;
+      margin-bottom: 28px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    }
+    .hero h1 {
+      font-size: 48px; font-weight: 700;
+      color: var(--navy); line-height: 1.2;
+      margin-bottom: 20px;
+    }
+    .hero h1 span { color: var(--teal); }
+    .hero p {
+      font-size: 19px; color: var(--text-muted);
+      max-width: 580px; margin: 0 auto 36px; line-height: 1.6;
+    }
+    .hero-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+    .btn-primary {
+      background: var(--navy); color: #fff;
+      padding: 14px 28px; border-radius: 10px;
+      font-size: 15px; font-weight: 600;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn-primary:hover { background: #2a4a6b; transform: translateY(-1px); }
+    .btn-secondary {
+      background: var(--surface); color: var(--navy);
+      padding: 14px 28px; border-radius: 10px;
+      font-size: 15px; font-weight: 600;
+      text-decoration: none;
+      border: 1px solid var(--border);
+      transition: border-color 0.2s, transform 0.1s;
+    }
+    .btn-secondary:hover { border-color: var(--blue); transform: translateY(-1px); }
+    .hero-install {
+      margin-top: 32px;
+      display: inline-block;
+      background: var(--navy); color: var(--accent);
+      padding: 12px 24px; border-radius: 10px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 14px;
+    }
+    .hero-install span { color: var(--text-subtle); }
+
+    /* Badges */
+    .badges {
+      display: flex; gap: 8px; justify-content: center;
+      margin-top: 24px; flex-wrap: wrap;
+    }
+
+    /* How it works */
+    .how-it-works { background: var(--surface); }
+    .flow-diagram {
+      margin-top: 48px;
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+    }
+    .flow-step {
+      text-align: center; padding: 32px 24px;
+      border-radius: 16px; background: var(--bg);
+      border: 1px solid var(--border-light);
+      position: relative;
+    }
+    .flow-step-number {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--teal); color: #fff;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 16px;
+      margin-bottom: 16px;
+    }
+    .flow-step h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
+    .flow-step p { font-size: 14px; color: var(--text-muted); }
+    .flow-arrow {
+      display: none; position: absolute; right: -18px; top: 50%;
+      transform: translateY(-50%); color: var(--text-subtle); font-size: 20px;
+    }
+
+    /* Features */
+    .features-grid {
+      margin-top: 48px;
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px;
+    }
+    .feature-card {
+      background: var(--surface);
+      border-radius: 16px;
+      border: 1px solid var(--border-light);
+      overflow: hidden;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .feature-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 8px 32px rgba(29, 53, 87, 0.06);
+    }
+    .feature-card img {
+      width: 100%; aspect-ratio: 16 / 10;
+      object-fit: cover; object-position: top;
+      border-bottom: 1px solid var(--border-light);
+    }
+    .feature-card-body { padding: 24px; }
+    .feature-tag {
+      display: inline-block; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 1px;
+      padding: 4px 10px; border-radius: 6px;
+      margin-bottom: 10px;
+    }
+    .tag-email { background: #EFF6FF; color: #1D4ED8; }
+    .tag-plan { background: #F5F3FF; color: #6D28D9; }
+    .tag-code { background: #F0FDF4; color: #15803D; }
+    .tag-trajectory { background: #FFFBEB; color: #A16207; }
+    .tag-approval { background: #FEF2F2; color: #B91C1C; }
+    .tag-memory { background: #E8F5F0; color: #2A9D8F; }
+    .feature-card h3 { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+    .feature-card p { font-size: 14px; color: var(--text-muted); line-height: 1.5; }
+
+    /* Agents */
+    .agents-section { background: var(--surface); }
+    .agents-grid {
+      margin-top: 48px;
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;
+    }
+    .agent-card {
+      padding: 28px 20px;
+      border-radius: 14px; background: var(--bg);
+      border: 1px solid var(--border-light);
+      text-align: center;
+    }
+    .agent-card .agent-name {
+      font-weight: 600; font-size: 16px;
+      margin-bottom: 6px;
+    }
+    .agent-card .agent-desc {
+      font-size: 13px; color: var(--text-muted);
+    }
+    .agent-icon {
+      font-size: 28px; margin-bottom: 12px;
+    }
+
+    /* Quick Start */
+    .quickstart-card {
+      margin-top: 48px;
+      background: var(--surface);
+      border-radius: 16px;
+      border: 1px solid var(--border-light);
+      padding: 40px;
+      max-width: 640px;
+    }
+    .quickstart-card pre {
+      background: var(--navy);
+      color: var(--accent);
+      padding: 20px 24px;
+      border-radius: 10px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 14px;
+      line-height: 1.8;
+      overflow-x: auto;
+    }
+    .quickstart-card pre .comment { color: var(--text-subtle); }
+    .quickstart-card p {
+      margin-top: 20px;
+      font-size: 14px; color: var(--text-muted);
+    }
+
+    /* Footer */
+    footer {
+      padding: 48px 24px;
+      border-top: 1px solid var(--border-light);
+      text-align: center;
+    }
+    footer p { font-size: 14px; color: var(--text-muted); }
+    footer a { color: var(--teal); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+    .footer-links {
+      display: flex; gap: 24px; justify-content: center;
+      margin-bottom: 16px;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 32px; }
+      .hero p { font-size: 16px; }
+      .flow-diagram { grid-template-columns: 1fr; }
+      .features-grid { grid-template-columns: 1fr; }
+      .agents-grid { grid-template-columns: repeat(2, 1fr); }
+      .nav-links { display: none; }
+      section { padding: 64px 16px; }
+    }
+    @media (min-width: 769px) {
+      .flow-arrow { display: block; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="nav-brand">
+      <img src="assets/icon.png" alt="AgentClick">
+      AgentClick
+    </a>
+    <div class="nav-links">
+      <a href="#how-it-works">How It Works</a>
+      <a href="#features">Features</a>
+      <a href="#agents">Agents</a>
+      <a href="#quickstart">Quick Start</a>
+      <a href="https://github.com/agentlayer-io/AgentClick" class="nav-cta">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <img src="assets/icon.png" alt="AgentClick" class="hero-icon">
+    <h1>Review before <span>your agent</span> acts</h1>
+    <p>A browser-based review layer for autonomous AI agents. Agents propose actions, you inspect and edit in a real UI, then the agent continues.</p>
+    <div class="hero-actions">
+      <a href="https://github.com/agentlayer-io/AgentClick" class="btn-primary">View on GitHub</a>
+      <a href="#features" class="btn-secondary">See Features</a>
+    </div>
+    <div class="hero-install">
+      <span>$</span> npm install -g @harvenstar/agentclick
+    </div>
+    <div class="badges">
+      <a href="https://www.npmjs.com/package/@harvenstar/agentclick"><img src="https://img.shields.io/npm/v/%40harvenstar%2Fagentclick" alt="npm version"></a>
+      <a href="https://github.com/agentlayer-io/AgentClick"><img src="https://img.shields.io/github/stars/agentlayer-io/AgentClick?style=social" alt="GitHub stars"></a>
+      <img src="https://img.shields.io/npm/l/%40harvenstar%2Fagentclick" alt="MIT license">
+    </div>
+  </div>
+</section>
+
+<!-- How It Works -->
+<section class="how-it-works" id="how-it-works">
+  <div class="container">
+    <div class="section-label">How It Works</div>
+    <h2 class="section-title">A human-in-the-loop safeguard</h2>
+    <p class="section-desc">Most agents go straight from decision to action. AgentClick adds a review step so you stay in control without slowing things down.</p>
+    <div class="flow-diagram">
+      <div class="flow-step">
+        <div class="flow-step-number">1</div>
+        <h3>Agent proposes</h3>
+        <p>The agent sends an action, draft, or plan to AgentClick via a simple HTTP POST.</p>
+        <span class="flow-arrow">&rarr;</span>
+      </div>
+      <div class="flow-step">
+        <div class="flow-step-number">2</div>
+        <h3>You review &amp; edit</h3>
+        <p>A purpose-built UI opens in your browser. Read, edit, rewrite, or reject before anything runs.</p>
+        <span class="flow-arrow">&rarr;</span>
+      </div>
+      <div class="flow-step">
+        <div class="flow-step-number">3</div>
+        <h3>Agent continues</h3>
+        <p>The agent picks up your edits and proceeds. Your preferences are saved for next time.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section id="features">
+  <div class="container">
+    <div class="section-label">Features</div>
+    <h2 class="section-title">Every review type your agent needs</h2>
+    <p class="section-desc">From emails to code diffs to multi-step plans, AgentClick gives you a real UI for every kind of agent interaction.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <img src="assets/email-review.png" alt="Email Review" loading="lazy">
+        <div class="feature-card-body">
+          <span class="feature-tag tag-email">Email Review</span>
+          <h3>Browse, triage, and reply</h3>
+          <p>View your inbox, edit reply drafts paragraph-by-paragraph, and let the agent learn your writing style over time.</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <img src="assets/plan-review.png" alt="Plan Review" loading="lazy">
+        <div class="feature-card-body">
+          <span class="feature-tag tag-plan">Plan Review</span>
+          <h3>Inspect multi-step plans</h3>
+          <p>Visualize execution plans as a DAG. Add constraints, skip steps, or restructure before the agent starts.</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <img src="assets/code-review.png" alt="Code Review" loading="lazy">
+        <div class="feature-card-body">
+          <span class="feature-tag tag-code">Code Review</span>
+          <h3>GitHub-style diffs</h3>
+          <p>See exactly which files change with full diff views before any command runs. File tree, add/modify/delete status, syntax highlighting.</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <img src="assets/trajectory-review.png" alt="Trajectory Review" loading="lazy">
+        <div class="feature-card-body">
+          <span class="feature-tag tag-trajectory">Trajectory Inspection</span>
+          <h3>Replay every decision</h3>
+          <p>Review tool calls, decisions, errors, and retries in a visual timeline. Catch mistakes and provide corrections.</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <img src="assets/action-approval.png" alt="Action Approval" loading="lazy">
+        <div class="feature-card-body">
+          <span class="feature-tag tag-approval">Action Approval</span>
+          <h3>Approve or reject with reasons</h3>
+          <p>High-risk actions get a dedicated approval screen with risk levels and space for notes before execution.</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <img src="assets/home.png" alt="Dashboard" loading="lazy">
+        <div class="feature-card-body">
+          <span class="feature-tag tag-memory">Dashboard</span>
+          <h3>All sessions at a glance</h3>
+          <p>Track pending, active, and completed review sessions. Memory management, preferences, and session history in one place.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Supported Agents -->
+<section class="agents-section" id="agents">
+  <div class="container">
+    <div class="section-label">Integrations</div>
+    <h2 class="section-title">Works with your agent</h2>
+    <p class="section-desc">AgentClick is framework-agnostic. Any agent that can POST JSON and poll an HTTP endpoint can use it. Skill files make integration effortless.</p>
+    <div class="agents-grid">
+      <div class="agent-card">
+        <div class="agent-icon">&#9889;</div>
+        <div class="agent-name">Claude Code</div>
+        <div class="agent-desc">Anthropic's CLI agent</div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-icon">&#128736;</div>
+        <div class="agent-name">Codex</div>
+        <div class="agent-desc">OpenAI's coding agent</div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-icon">&#129302;</div>
+        <div class="agent-name">OpenClaw</div>
+        <div class="agent-desc">Open-source agent platform</div>
+      </div>
+      <div class="agent-card">
+        <div class="agent-icon">&#128295;</div>
+        <div class="agent-name">Custom Agents</div>
+        <div class="agent-desc">Any tool-calling agent</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Quick Start -->
+<section id="quickstart">
+  <div class="container">
+    <div class="section-label">Get Started</div>
+    <h2 class="section-title">Up and running in seconds</h2>
+    <p class="section-desc">Install globally, start the server, and tell your agent to use it.</p>
+    <div class="quickstart-card">
+      <pre><span class="comment"># Install</span>
+npm install -g @harvenstar/agentclick
+
+<span class="comment"># Start the review server</span>
+agentclick
+
+<span class="comment"># For remote access (phone, another machine)</span>
+agentclick --remote</pre>
+      <p>Then tell your agent: <em>"AgentClick is running at http://localhost:38173. Use it whenever you need a browser review UI."</em></p>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="footer-links">
+      <a href="https://github.com/agentlayer-io/AgentClick">GitHub</a>
+      <a href="https://www.npmjs.com/package/@harvenstar/agentclick">npm</a>
+      <a href="https://github.com/agentlayer-io/AgentClick/blob/main/LICENSE">MIT License</a>
+    </div>
+    <p>Built by <a href="https://github.com/agentlayer-io">AgentLayer</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -41,9 +41,54 @@ curl -s "$AGENTCLICK_BASE/api/preferences/style"
 
 ## Session Style Rules
 
-When the poll result includes `userIntention`, treat it as a **session-level style rule** — apply it to every subsequent reply draft in this session, not just the current one. It is also automatically saved to preferences by the server.
+When the poll result includes `userIntention`, treat it as a **session-level style rule** — apply it to every subsequent reply draft in this session, not just the current one. The server saves it to preferences automatically unless a conflict is detected.
 
 Example: if `userIntention` is `"say Hiiii instead of Hi"`, every reply generated after that point must use "Hiiii".
+
+## Preference Conflict Resolution
+
+When the poll result includes `preferenceConflict`, the server found an existing rule that overlaps with the new one and did **not** auto-save. Resolve it before continuing.
+
+```json
+{
+  "preferenceConflict": {
+    "existing": "the old rule already saved",
+    "incoming": "the new rule that was not saved"
+  }
+}
+```
+
+**Resolution steps:**
+
+1. Decide which action best fits. If the rules clearly conflict (e.g. opposite greetings, contradictory tones), guess **replace**. If they seem additive (e.g. greeting style vs. length style), guess **keep both**.
+
+2. Tell the user your guess and ask for confirmation:
+   > "Existing preference: _[existing]_. New preference: _[incoming]_. I'll **[replace / keep both]** — is that right? Or should I delete the old one instead?"
+
+3. Based on the response:
+
+   - **Replace** (new overrides old):
+     ```bash
+     curl -s -X PUT "$AGENTCLICK_BASE/api/preferences/style" \
+       -H "Content-Type: application/json" \
+       -d "{\"oldRule\":\"EXISTING\",\"newRule\":\"INCOMING\",\"scope\":\"email\"}"
+     ```
+
+   - **Keep both** (they coexist):
+     ```bash
+     curl -s -X POST "$AGENTCLICK_BASE/api/preferences/style" \
+       -H "Content-Type: application/json" \
+       -d "{\"rule\":\"INCOMING\",\"scope\":\"email\"}"
+     ```
+
+   - **Delete old** (remove the existing rule, do not save incoming):
+     ```bash
+     curl -s -X DELETE "$AGENTCLICK_BASE/api/preferences/style" \
+       -H "Content-Type: application/json" \
+       -d "{\"rule\":\"EXISTING\",\"scope\":\"email\"}"
+     ```
+
+4. Resume polling after resolving.
 
 ## Step 1: Ensure AgentClick is running
 
