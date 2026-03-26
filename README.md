@@ -21,6 +21,10 @@
 </p>
 
 <p align="center">
+  <a href="https://zhmzm.github.io/agentclick/"><b>Website</b></a>
+</p>
+
+<p align="center">
   <img src="assets/overview.jpg" alt="AgentClick overview" width="800">
 </p>
 
